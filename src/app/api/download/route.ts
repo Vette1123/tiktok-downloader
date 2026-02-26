@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Downloader } from '../../../lib/downloader'
-import { validateUrl } from '../../../lib/validator'
+import { validateUrl, detectPlatform } from '../../../lib/validator'
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,12 +15,16 @@ export async function POST(request: NextRequest) {
 
     if (!validateUrl(url)) {
       return NextResponse.json(
-        { success: false, error: 'Invalid TikTok URL' },
+        {
+          success: false,
+          error: 'Invalid URL. Please paste a TikTok or Twitter/X link.',
+        },
         { status: 400 },
       )
     }
 
-    console.log('Processing TikTok URL:', url, 'Type:', type)
+    const platform = detectPlatform(url)
+    console.log(`Processing ${platform} URL:`, url, 'Type:', type)
 
     const downloader = new Downloader()
     const videoData = await downloader.downloadVideo(url)
@@ -52,6 +56,7 @@ export async function POST(request: NextRequest) {
         author: videoData.author,
         duration: videoData.duration,
         thumbnail: videoData.thumbnail,
+        platform,
         images:
           videoData.images?.map((img) => ({
             ...img,

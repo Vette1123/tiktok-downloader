@@ -5,12 +5,15 @@ export interface ImageData {
   selected: boolean
 }
 
+export type SupportedPlatform = 'tiktok' | 'twitter' | 'unknown'
+
 export interface VideoMetadata {
   title: string
   author: string
   duration: number
   thumbnail: string
   images?: ImageData[]
+  platform?: SupportedPlatform
 }
 
 export interface AppState {

@@ -1,19 +1,36 @@
-export function validateUrl(url: string): boolean {
-  if (!url || typeof url !== 'string') {
-    return false
-  }
+export type SupportedPlatform = 'tiktok' | 'twitter' | 'unknown'
 
-  // Support various TikTok URL formats
-  const tiktokUrlPatterns = [
+const platformPatterns: Record<
+  Exclude<SupportedPlatform, 'unknown'>,
+  RegExp[]
+> = {
+  tiktok: [
     /^(https?:\/\/)?(www\.)?tiktok\.com\/@[\w.-]+\/video\/\d+/,
     /^(https?:\/\/)?(www\.)?tiktok\.com\/[\w.-]+\/video\/\d+/,
     /^(https?:\/\/)?vm\.tiktok\.com\/[\w\d]+/,
     /^(https?:\/\/)?vt\.tiktok\.com\/[\w\d]+/,
     /^(https?:\/\/)?m\.tiktok\.com\/v\/\d+/,
     /^(https?:\/\/)?(www\.)?tiktok\.com\/t\/[\w\d]+/,
-  ]
+  ],
+  twitter: [
+    /^(https?:\/\/)?(www\.)?(twitter|x)\.com\/[\w]+\/status\/\d+/,
+    /^(https?:\/\/)?t\.co\/[\w\d]+/,
+  ],
+}
 
-  return tiktokUrlPatterns.some((pattern) => pattern.test(url.trim()))
+export function detectPlatform(url: string): SupportedPlatform {
+  if (!url || typeof url !== 'string') return 'unknown'
+  const trimmed = url.trim()
+  for (const [platform, patterns] of Object.entries(platformPatterns)) {
+    if (patterns.some((p) => p.test(trimmed))) {
+      return platform as SupportedPlatform
+    }
+  }
+  return 'unknown'
+}
+
+export function validateUrl(url: string): boolean {
+  return detectPlatform(url) !== 'unknown'
 }
 
 export function parseVideoId(url: string): string | null {
@@ -23,6 +40,12 @@ export function parseVideoId(url: string): string | null {
     /vm\.tiktok\.com\/([\w\d]+)/,
     /vt\.tiktok\.com\/([\w\d]+)/,
     /\/t\/([\w\d]+)/,
+    /\/status\/(\d+)/,
+    /\/p\/([\w-]+)/,
+    /\/reel\/([\w-]+)/,
+    /\/videos\/(\d+)/,
+    /v=(\d+)/,
+    /fb\.watch\/([\w\d-]+)/,
   ]
 
   for (const pattern of patterns) {

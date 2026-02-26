@@ -4,6 +4,7 @@ import { useReducer, useRef } from 'react'
 import { appReducer, initialState } from '@/lib/appReducer'
 import {
   TikTokIcon,
+  TwitterXIcon,
   PortfolioIcon,
   GitHubIcon,
   SpinnerIcon,
@@ -19,7 +20,7 @@ export default function Home() {
 
   const handleProcess = async () => {
     if (!state.url.trim()) {
-      dispatch({ type: 'SET_MESSAGE', payload: 'Please enter a TikTok URL' })
+      dispatch({ type: 'SET_MESSAGE', payload: 'Please enter a URL' })
       return
     }
 
@@ -100,7 +101,7 @@ export default function Home() {
 
       const link = document.createElement('a')
       link.href = blobUrl
-      link.download = `tiktok-video-${Date.now()}.mp4`
+      link.download = `social-video-${Date.now()}.mp4`
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
@@ -139,7 +140,7 @@ export default function Home() {
 
       const link = document.createElement('a')
       link.href = blobUrl
-      link.download = `tiktok-audio-${Date.now()}.mp3`
+      link.download = `social-audio-${Date.now()}.mp3`
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
@@ -204,7 +205,7 @@ export default function Home() {
 
         const link = document.createElement('a')
         link.href = blobUrl
-        link.download = `tiktok-images-${Date.now()}.zip`
+        link.download = `social-images-${Date.now()}.zip`
         document.body.appendChild(link)
         link.click()
         document.body.removeChild(link)
@@ -307,16 +308,21 @@ export default function Home() {
         <div className='text-center mb-6 md:mb-8'>
           {' '}
           <div className='flex justify-center mb-4'>
-            <div className='w-12 h-12 md:w-16 md:h-16 bg-gradient-to-r from-pink-500 to-violet-500 rounded-full flex items-center justify-center'>
-              <TikTokIcon className='w-6 h-6 md:w-8 md:h-8 text-white' />
+            <div className='flex items-center space-x-3'>
+              <div className='w-10 h-10 md:w-12 md:h-12 bg-[#010101] rounded-full flex items-center justify-center ring-2 ring-white/20'>
+                <TikTokIcon className='w-5 h-5 md:w-6 md:h-6 text-white' />
+              </div>
+              <div className='w-10 h-10 md:w-12 md:h-12 bg-black rounded-full flex items-center justify-center ring-2 ring-white/20'>
+                <TwitterXIcon className='w-5 h-5 md:w-6 md:h-6 text-white' />
+              </div>
             </div>
           </div>
           <h1 className='text-2xl md:text-3xl lg:text-4xl font-bold text-white mb-2'>
-            TikTok Downloader
+            Social Media Downloader
           </h1>{' '}
           <p className='text-sm md:text-base text-white/70 mb-4'>
-            Download TikTok videos without watermarks, extract MP3 audio, or
-            save images from photo carousels
+            Download videos without watermarks, extract MP3 audio, or save
+            images from TikTok &amp; Twitter/X
           </p>
           {/* Developer Links */}
           <div className='flex justify-center items-center space-x-4'>
@@ -358,7 +364,7 @@ export default function Home() {
             <div>
               <input
                 type='text'
-                placeholder='Paste TikTok URL here...'
+                placeholder='Paste a TikTok or Twitter/X URL...'
                 value={state.url}
                 onChange={(e) =>
                   dispatch({ type: 'SET_URL', payload: e.target.value })
@@ -410,12 +416,7 @@ export default function Home() {
                   Processing...
                 </>
               ) : (
-                <>
-                  {/* {state.downloadType === 'video'
-                    ? '📹 Process Video'
-                    : '🎵 Extract MP3'} */}
-                  Process TikTok URL
-                </>
+                <>Process URL</>
               )}
             </button>{' '}
             {/* Features List - Hidden on mobile, shown on desktop */}
@@ -495,8 +496,7 @@ export default function Home() {
                       Ready to Download?
                     </h3>
                     <p className='text-white/70 text-sm mb-4'>
-                      Paste any TikTok URL above to get started. We support all
-                      TikTok link formats!
+                      Paste a TikTok or Twitter/X URL above to get started!
                     </p>
                   </div>
                 </div>
@@ -514,10 +514,10 @@ export default function Home() {
                       </div>
                       <div>
                         <p className='text-white text-sm font-medium'>
-                          Copy TikTok URL
+                          Copy a Video URL
                         </p>
                         <p className='text-white/60 text-xs'>
-                          From any TikTok video or image post
+                          From TikTok or Twitter/X
                         </p>
                       </div>
                     </div>
@@ -559,8 +559,9 @@ export default function Home() {
                     <div className='space-y-2 text-xs text-white/70'>
                       <p>• https://www.tiktok.com/@user/video/...</p>
                       <p>• https://vm.tiktok.com/...</p>
-                      <p>• https://m.tiktok.com/...</p>
-                      <p>• https://tiktok.com/...</p>
+                      <p>• https://vt.tiktok.com/...</p>
+                      <p>• https://twitter.com/user/status/...</p>
+                      <p>• https://x.com/user/status/...</p>
                     </div>
                   </div>
                   <div className='bg-white/5 rounded-xl p-4 border border-white/10'>
@@ -605,17 +606,41 @@ export default function Home() {
                           .padStart(2, '0')}
                       </p>
                     )}
-                    {state.originalUrl && (
-                      <a
-                        href={state.originalUrl}
-                        target='_blank'
-                        rel='noopener noreferrer'
-                        className='inline-flex items-center gap-1 mt-2 text-xs text-pink-400 hover:text-pink-300 transition-colors underline underline-offset-2 break-all'
-                      >
-                        <TikTokIcon className='w-3 h-3 flex-shrink-0' />
-                        View on TikTok
-                      </a>
-                    )}
+                    {state.originalUrl &&
+                      (() => {
+                        const platform = state.videoMetadata?.platform
+                        const platformConfig = {
+                          tiktok: {
+                            label: 'View on TikTok',
+                            Icon: TikTokIcon,
+                            color: 'text-pink-400 hover:text-pink-300',
+                          },
+                          twitter: {
+                            label: 'View on Twitter/X',
+                            Icon: TwitterXIcon,
+                            color: 'text-sky-400 hover:text-sky-300',
+                          },
+                          unknown: {
+                            label: 'View Original',
+                            Icon: TikTokIcon,
+                            color: 'text-pink-400 hover:text-pink-300',
+                          },
+                        }
+                        const cfg =
+                          platformConfig[platform ?? 'tiktok'] ??
+                          platformConfig.tiktok
+                        return (
+                          <a
+                            href={state.originalUrl}
+                            target='_blank'
+                            rel='noopener noreferrer'
+                            className={`inline-flex items-center gap-1 mt-2 text-xs transition-colors underline underline-offset-2 break-all ${cfg.color}`}
+                          >
+                            <cfg.Icon className='w-3 h-3 flex-shrink-0' />
+                            {cfg.label}
+                          </a>
+                        )
+                      })()}
                   </div>
                 </div>
                 {/* Preview Toggle */}

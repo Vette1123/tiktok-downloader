@@ -15,22 +15,20 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'TikTok Downloader - Download TikTok Videos Without Watermarks',
+  title: 'Social Media Downloader - Download Videos Without Watermarks',
   description:
-    'Free TikTok video downloader. Download TikTok videos without watermarks in high quality. Fast, secure, and easy to use.',
+    'Free social media video downloader. Download TikTok videos without watermarks and Twitter/X videos. Extract MP3 audio or save image galleries in high quality.',
   keywords: [
-    'TikTok downloader',
-    'download TikTok videos',
-    'TikTok video downloader',
-    'no watermark',
-    'TikTok without watermark',
-    'free TikTok downloader',
-    'TikTok video saver',
-    'TikTok MP4',
-    'save TikTok videos',
-    'TikTok content downloader',
     'social media downloader',
     'video downloader',
+    'TikTok downloader',
+    'Twitter downloader',
+    'Twitter/X video downloader',
+    'download TikTok without watermark',
+    'MP3 audio extractor',
+    'no watermark downloader',
+    'free video downloader',
+    'image gallery downloader',
   ],
   authors: [
     {
@@ -50,11 +48,11 @@ export const metadata: Metadata = {
     canonical: '/',
   },
   openGraph: {
-    title: 'TikTok Downloader - Download Videos Without Watermarks',
+    title: 'Social Media Downloader - Download Videos Without Watermarks',
     description:
-      'Free TikTok video downloader. Download TikTok videos without watermarks in high quality. Fast, secure, and easy to use.',
+      'Free social media video downloader. Download TikTok and Twitter/X videos without watermarks. Fast, secure, and easy to use.',
     url: siteConfig.links.github,
-    siteName: siteConfig.name,
+    siteName: 'Social Media Downloader',
     images: [
       {
         url: siteConfig.ogImage,
@@ -113,8 +111,8 @@ export default function RootLayout({
         <link rel='icon' href='/favicon.ico' sizes='32x32' />
         <link rel='apple-touch-icon' href='/apple-touch-icon.svg' />
         <link rel='manifest' href='/manifest.json' />
-        <meta name='theme-color' content='#ff0050' />
-        <meta name='msapplication-TileColor' content='#ff0050' />
+        <meta name='theme-color' content='#7c3aed' />
+        <meta name='msapplication-TileColor' content='#7c3aed' />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}

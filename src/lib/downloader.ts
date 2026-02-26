@@ -1,13 +1,51 @@
 import axios from 'axios'
 import * as cheerio from 'cheerio'
 import { VideoData, ImageData } from './types'
-import { parseVideoId } from './validator'
+import { parseVideoId, detectPlatform } from './validator'
 
 export class Downloader {
   private readonly userAgent =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
+  // Public community cobalt instances — updated list
+  private readonly cobaltInstances = [
+    'https://cobalt.api.timelessnesses.me/',
+    'https://co.wuk.sh/',
+    'https://cobalt.ggtyler.dev/',
+    'https://cobalt-api.mrtoxic.dev/',
+    'https://cobalt.privacyredirect.com/',
+  ]
+
+  // Main entry point: auto-detects platform and routes accordingly
   async downloadVideo(url: string): Promise<VideoData> {
+    const platform = detectPlatform(url)
+
+    if (platform === 'tiktok') {
+      return this.downloadTikTok(url)
+    }
+
+    if (platform === 'twitter') {
+      const methods = [
+        () => this.tryVxTwitterMethod(url),
+        () => this.tryCobaltInstances(url),
+      ]
+      for (const method of methods) {
+        try {
+          const result = await method()
+          if (result) return result
+        } catch (e) {
+          console.warn('Twitter method failed, trying next...', e)
+        }
+      }
+      throw new Error(
+        'Could not download Twitter/X content. The post may be private, age-restricted, or unavailable.',
+      )
+    }
+
+    throw new Error('Unsupported URL. Please use a TikTok or Twitter/X link.')
+  }
+
+  private async downloadTikTok(url: string): Promise<VideoData> {
     const videoId = parseVideoId(url)
     if (!videoId) {
       throw new Error('Could not extract video ID from URL')
@@ -37,6 +75,154 @@ export class Downloader {
     throw new Error(
       'All download methods failed. TikTok might be blocking requests or the video is private.',
     )
+  }
+
+  // Try every public cobalt instance in order
+  private async tryCobaltInstances(url: string): Promise<VideoData | null> {
+    const errors: string[] = []
+    for (const instance of this.cobaltInstances) {
+      try {
+        const result = await this.tryCobaltInstance(instance, url)
+        if (result) return result
+      } catch (e) {
+        errors.push(`${instance}: ${e}`)
+      }
+    }
+    console.warn('All cobalt instances failed:', errors)
+    return null
+  }
+
+  private async tryCobaltInstance(
+    baseUrl: string,
+    url: string,
+  ): Promise<VideoData | null> {
+    const response = await axios.post(
+      baseUrl,
+      { url, videoQuality: 'max', filenameStyle: 'basic' },
+      {
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        timeout: 20000,
+      },
+    )
+
+    const data = response.data
+
+    if (data.status === 'error') {
+      throw new Error(
+        `Cobalt error: ${data.error?.code ?? JSON.stringify(data.error)}`,
+      )
+    }
+
+    if (data.status === 'tunnel' || data.status === 'redirect') {
+      return {
+        id: Date.now().toString(),
+        title: data.filename?.replace(/\.[^.]+$/, '') || 'Social Media Video',
+        url,
+        thumbnail: '',
+        duration: 0,
+        author: 'Unknown',
+        description: '',
+        downloadUrl: data.url,
+      }
+    }
+
+    if (data.status === 'picker') {
+      const items = data.picker as Array<{
+        type: string
+        url: string
+        thumb?: string
+      }>
+      const videos = items?.filter((p) => p.type === 'video') || []
+      const photos = items?.filter((p) => p.type === 'photo') || []
+      const downloadUrl = videos[0]?.url || items?.[0]?.url || ''
+
+      const images: ImageData[] = photos.map(
+        (img: { url: string; thumb?: string }, i: number) => ({
+          id: `img_${i}`,
+          url: img.url,
+          thumbnail: img.thumb || img.url,
+        }),
+      )
+
+      return {
+        id: Date.now().toString(),
+        title: data.filename?.replace(/\.[^.]+$/, '') || 'Social Media Content',
+        url,
+        thumbnail: items?.[0]?.thumb || '',
+        duration: 0,
+        author: 'Unknown',
+        description: '',
+        downloadUrl,
+        images: images.length > 0 ? images : undefined,
+        isPhotoCarousel: images.length > 0,
+      }
+    }
+
+    console.warn('Cobalt unexpected status:', data.status, data)
+    return null
+  }
+
+  // Twitter/X: use vxtwitter API (open source, no auth required)
+  private async tryVxTwitterMethod(url: string): Promise<VideoData | null> {
+    // Extract username and tweet ID from URL
+    const match = url.match(/(?:twitter|x)\.com\/([^/]+)\/status\/(\d+)/)
+    if (!match) throw new Error('Could not parse Twitter URL')
+    const [, username, tweetId] = match
+
+    const response = await axios.get(
+      `https://api.vxtwitter.com/${username}/status/${tweetId}`,
+      {
+        headers: {
+          'User-Agent': this.userAgent,
+          Accept: 'application/json',
+        },
+        timeout: 20000,
+      },
+    )
+
+    const data = response.data
+
+    // Find best video media
+    const mediaItems = (data.media_extended ?? data.media ?? []) as Array<{
+      type: string
+      url: string
+      thumbnail_url?: string
+      altText?: string
+    }>
+
+    const videoItem = mediaItems.find(
+      (m) => m.type === 'video' || m.type === 'gif',
+    )
+    const photoItems = mediaItems.filter((m) => m.type === 'image')
+
+    if (!videoItem && photoItems.length === 0) {
+      throw new Error('No downloadable media found in tweet')
+    }
+
+    const downloadUrl = videoItem?.url || ''
+    const images: ImageData[] = photoItems.map((img, i) => ({
+      id: `tw_img_${i}`,
+      url: img.url,
+      thumbnail: img.thumbnail_url || img.url,
+    }))
+
+    return {
+      id: tweetId,
+      title: data.text
+        ? data.text.slice(0, 80).replace(/\s+/g, ' ')
+        : `Tweet by @${username}`,
+      url,
+      thumbnail: videoItem?.thumbnail_url || photoItems[0]?.url || '',
+      duration: 0,
+      author: data.user_name || username,
+      description: data.text || '',
+      downloadUrl,
+      images: images.length > 0 ? images : undefined,
+      isPhotoCarousel: images.length > 0 && !videoItem,
+    }
   }
 
   private async trySnaptikMethod(url: string): Promise<VideoData | null> {
@@ -269,7 +455,11 @@ export class Downloader {
 
   private async resolveUrl(url: string): Promise<string> {
     try {
-      if (url.includes('vm.tiktok.com') || url.includes('/t/')) {
+      if (
+        url.includes('vm.tiktok.com') ||
+        url.includes('vt.tiktok.com') ||
+        url.includes('/t/')
+      ) {
         const response = await axios.head(url, {
           maxRedirects: 5,
           validateStatus: () => true,

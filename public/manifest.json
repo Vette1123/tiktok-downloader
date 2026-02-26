@@ -1,7 +1,7 @@
 {
-  "name": "TikTok Downloader",
-  "short_name": "TikTok DL",
-  "description": "Download TikTok videos without watermarks in high quality",
+  "name": "Social Media Downloader",
+  "short_name": "SM Downloader",
+  "description": "Download videos without watermarks from TikTok, Twitter/X, Instagram, and Facebook",
   "icons": [
     {
       "src": "/favicon.svg",
@@ -14,8 +14,8 @@
       "type": "image/svg+xml"
     }
   ],
-  "theme_color": "#ff0050",
-  "background_color": "#000000",
+  "theme_color": "#7c3aed",
+  "background_color": "#1e1b4b",
   "display": "standalone",
   "start_url": "/",
   "orientation": "portrait"
