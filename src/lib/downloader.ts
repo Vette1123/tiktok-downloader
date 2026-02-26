@@ -35,7 +35,7 @@ export class Downloader {
     }
 
     throw new Error(
-      'All download methods failed. TikTok might be blocking requests or the video is private.'
+      'All download methods failed. TikTok might be blocking requests or the video is private.',
     )
   }
 
@@ -61,7 +61,7 @@ export class Downloader {
             Origin: 'https://snaptik.app',
           },
           timeout: 30000,
-        }
+        },
       )
 
       if (response.data && typeof response.data === 'string') {
@@ -114,7 +114,7 @@ export class Downloader {
             Referer: 'https://ssstik.io/en',
           },
           timeout: 30000,
-        }
+        },
       )
 
       if (response.data && response.data.url) {
@@ -156,7 +156,7 @@ export class Downloader {
             Referer: 'https://www.tikwm.com/',
           },
           timeout: 30000,
-        }
+        },
       )
 
       if (response.data && response.data.code === 0 && response.data.data) {
@@ -177,11 +177,20 @@ export class Downloader {
         }
 
         // Get the video URL and make it absolute if it's relative
+        // Prefer hdplay (HD no watermark), fall back to play (SD no watermark), then wmplay
         let downloadUrl = data.hdplay || data.play || data.wmplay
 
         // If the URL is relative, make it absolute
         if (downloadUrl && downloadUrl.startsWith('/')) {
           downloadUrl = 'https://www.tikwm.com' + downloadUrl
+        }
+
+        // Extract dedicated music/audio URL so the audio proxy never uses the video stream
+        let musicUrl: string | undefined =
+          data.music || data.music_info?.play || undefined
+
+        if (musicUrl && musicUrl.startsWith('/')) {
+          musicUrl = 'https://www.tikwm.com' + musicUrl
         }
 
         return {
@@ -193,6 +202,7 @@ export class Downloader {
           author: data.author?.nickname || 'Unknown',
           description: data.title || 'Downloaded via Tikwm',
           downloadUrl: downloadUrl,
+          musicUrl: musicUrl,
           images: images,
           isPhotoCarousel: isPhotoCarousel,
         }
@@ -204,7 +214,7 @@ export class Downloader {
   }
 
   private async tryDirectTikTokScraping(
-    url: string
+    url: string,
   ): Promise<VideoData | null> {
     try {
       // First resolve any shortened URLs

@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
     if (!videoUrl) {
       return NextResponse.json(
         { error: 'Video URL is required' },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     if (!videoUrl.startsWith('http://') && !videoUrl.startsWith('https://')) {
       return NextResponse.json(
         { error: 'Invalid video URL format' },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
@@ -40,11 +40,11 @@ export async function GET(request: NextRequest) {
       console.error(
         'Failed to fetch video:',
         response.status,
-        response.statusText
+        response.statusText,
       )
       return NextResponse.json(
         { error: `Failed to fetch video: ${response.status}` },
-        { status: response.status }
+        { status: response.status },
       )
     }
 
@@ -52,8 +52,10 @@ export async function GET(request: NextRequest) {
     const videoBuffer = await response.arrayBuffer()
     console.log('Video buffer size:', videoBuffer.byteLength)
 
-    // Determine content type
-    const contentType = response.headers.get('content-type') || 'video/mp4'
+    // Always serve as video/mp4 regardless of what the upstream CDN declares.
+    // Some CDNs return audio/* or application/octet-stream which causes browsers
+    // to render the file as audio-only. Forcing video/mp4 fixes that.
+    const contentType = 'video/mp4'
 
     // Generate filename with timestamp
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
@@ -78,7 +80,7 @@ export async function GET(request: NextRequest) {
           'Failed to fetch video: ' +
           (error instanceof Error ? error.message : 'Unknown error'),
       },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }

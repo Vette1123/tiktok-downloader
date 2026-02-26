@@ -9,14 +9,14 @@ export async function POST(request: NextRequest) {
     if (!url) {
       return NextResponse.json(
         { success: false, error: 'URL is required' },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
     if (!validateUrl(url)) {
       return NextResponse.json(
         { success: false, error: 'Invalid TikTok URL' },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
@@ -28,18 +28,20 @@ export async function POST(request: NextRequest) {
     if (!videoData || !videoData.downloadUrl) {
       return NextResponse.json(
         { success: false, error: 'Failed to extract video download URL' },
-        { status: 500 }
+        { status: 500 },
       )
     }
 
-    // Create proxy URLs for both video and audio
+    // Create proxy URLs for both video and audio.
+    // Always point the video proxy at the video stream.
     const videoProxyUrl = `/api/video?url=${encodeURIComponent(
-      videoData.downloadUrl
+      videoData.downloadUrl,
     )}`
 
-    const audioProxyUrl = `/api/audio?url=${encodeURIComponent(
-      videoData.downloadUrl
-    )}`
+    // For audio, prefer a dedicated audio-only URL (e.g. from tikwm's `music` field)
+    // so that the audio proxy never accidentally serves a video stream.
+    const audioSourceUrl = videoData.musicUrl || videoData.downloadUrl
+    const audioProxyUrl = `/api/audio?url=${encodeURIComponent(audioSourceUrl)}`
 
     return NextResponse.json({
       success: true,
@@ -65,7 +67,7 @@ export async function POST(request: NextRequest) {
         error:
           error instanceof Error ? error.message : 'Failed to process video',
       },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }

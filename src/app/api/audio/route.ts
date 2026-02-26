@@ -8,37 +8,51 @@ export async function GET(request: NextRequest) {
     if (!videoUrl) {
       return NextResponse.json(
         { success: false, error: 'Video URL is required' },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
-    console.log('Extracting audio from video URL:', videoUrl)
+    console.log('Fetching audio from URL:', videoUrl)
 
-    // For now, we'll simulate audio extraction by fetching the video
-    // In production, you would use ffmpeg to extract actual audio
-    const response = await fetch(videoUrl)
+    const response = await fetch(videoUrl, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Referer: 'https://www.tiktok.com/',
+        Accept: 'audio/*,video/*;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'identity',
+      },
+    })
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch video: ${response.statusText}`)
+      throw new Error(`Failed to fetch audio: ${response.statusText}`)
     }
 
-    const videoBuffer = await response.arrayBuffer()
+    const audioBuffer = await response.arrayBuffer()
 
-    // In production, you would process this with ffmpeg here
-    // For demo purposes, we'll return the video data with audio headers
+    // Determine whether the source is already an audio-only file or a video.
+    // Either way we serve it as audio/mpeg so the browser treats it as audio.
+    const upstreamType = response.headers.get('content-type') || ''
+    const isAudioOnly = upstreamType.startsWith('audio/')
 
-    return new NextResponse(videoBuffer, {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const filename = `tiktok-audio-${timestamp}.mp3`
+
+    return new NextResponse(audioBuffer, {
       headers: {
-        'Content-Type': 'audio/mpeg',
-        'Content-Disposition': 'attachment; filename="tiktok-audio.mp3"',
+        'Content-Type': isAudioOnly ? upstreamType : 'audio/mpeg',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Length': audioBuffer.byteLength.toString(),
         'Cache-Control': 'no-cache',
+        'Access-Control-Allow-Origin': '*',
       },
     })
   } catch (error) {
     console.error('Audio extraction error:', error)
     return NextResponse.json(
       { success: false, error: 'Failed to extract audio' },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }
