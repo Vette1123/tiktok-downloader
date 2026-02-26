@@ -32,16 +32,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Create proxy URLs for both video and audio.
-    // Always point the video proxy at the video stream.
+    // Video proxy: forces video/mp4 content-type so browsers render a proper video player
     const videoProxyUrl = `/api/video?url=${encodeURIComponent(
       videoData.downloadUrl,
     )}`
 
-    // For audio, prefer a dedicated audio-only URL (e.g. from tikwm's `music` field)
-    // so that the audio proxy never accidentally serves a video stream.
-    const audioSourceUrl = videoData.musicUrl || videoData.downloadUrl
-    const audioProxyUrl = `/api/audio?url=${encodeURIComponent(audioSourceUrl)}`
+    // Audio proxy: re-serves the same video stream with audio/mpeg content-type
+    // so browsers treat it as an audio file for extraction purposes
+    const audioProxyUrl = `/api/audio?url=${encodeURIComponent(
+      videoData.downloadUrl,
+    )}`
 
     return NextResponse.json({
       success: true,

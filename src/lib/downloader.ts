@@ -185,14 +185,6 @@ export class Downloader {
           downloadUrl = 'https://www.tikwm.com' + downloadUrl
         }
 
-        // Extract dedicated music/audio URL so the audio proxy never uses the video stream
-        let musicUrl: string | undefined =
-          data.music || data.music_info?.play || undefined
-
-        if (musicUrl && musicUrl.startsWith('/')) {
-          musicUrl = 'https://www.tikwm.com' + musicUrl
-        }
-
         return {
           id: videoId,
           title: data.title || 'TikTok Video (Tikwm)',
@@ -202,7 +194,6 @@ export class Downloader {
           author: data.author?.nickname || 'Unknown',
           description: data.title || 'Downloaded via Tikwm',
           downloadUrl: downloadUrl,
-          musicUrl: musicUrl,
           images: images,
           isPhotoCarousel: isPhotoCarousel,
         }

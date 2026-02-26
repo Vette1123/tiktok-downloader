@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         Referer: 'https://www.tiktok.com/',
-        Accept: 'audio/*,video/*;q=0.9,*/*;q=0.8',
+        Accept: 'video/webm,video/ogg,video/*;q=0.9,*/*;q=0.5',
         'Accept-Language': 'en-US,en;q=0.5',
         'Accept-Encoding': 'identity',
       },
@@ -31,17 +31,14 @@ export async function GET(request: NextRequest) {
 
     const audioBuffer = await response.arrayBuffer()
 
-    // Determine whether the source is already an audio-only file or a video.
-    // Either way we serve it as audio/mpeg so the browser treats it as audio.
-    const upstreamType = response.headers.get('content-type') || ''
-    const isAudioOnly = upstreamType.startsWith('audio/')
-
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
     const filename = `tiktok-audio-${timestamp}.mp3`
 
+    // Serve the video stream as audio/mpeg — browsers and media players
+    // extract the audio track from the MP4 container automatically
     return new NextResponse(audioBuffer, {
       headers: {
-        'Content-Type': isAudioOnly ? upstreamType : 'audio/mpeg',
+        'Content-Type': 'audio/mpeg',
         'Content-Disposition': `attachment; filename="${filename}"`,
         'Content-Length': audioBuffer.byteLength.toString(),
         'Cache-Control': 'no-cache',
