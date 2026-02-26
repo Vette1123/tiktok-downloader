@@ -47,6 +47,7 @@ export default function Home() {
             downloadUrl: data.downloadUrl,
             audioUrl: data.audioUrl,
             metadata: data.metadata,
+            originalUrl: state.url,
           },
         })
 
@@ -165,7 +166,7 @@ export default function Home() {
     if (!state.videoMetadata?.images) return
 
     const selectedImages = state.videoMetadata.images.filter(
-      (img) => img.selected
+      (img) => img.selected,
     )
 
     if (selectedImages.length === 0) {
@@ -604,6 +605,17 @@ export default function Home() {
                           .padStart(2, '0')}
                       </p>
                     )}
+                    {state.originalUrl && (
+                      <a
+                        href={state.originalUrl}
+                        target='_blank'
+                        rel='noopener noreferrer'
+                        className='inline-flex items-center gap-1 mt-2 text-xs text-pink-400 hover:text-pink-300 transition-colors underline underline-offset-2 break-all'
+                      >
+                        <TikTokIcon className='w-3 h-3 flex-shrink-0' />
+                        View on TikTok
+                      </a>
+                    )}
                   </div>
                 </div>
                 {/* Preview Toggle */}
@@ -764,7 +776,7 @@ export default function Home() {
                             disabled={
                               state.downloadingImages ||
                               !state.videoMetadata?.images?.some(
-                                (img) => img.selected
+                                (img) => img.selected,
                               )
                             }
                             className='w-full cursor-pointer py-3 px-4 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center text-sm md:text-base gap-2'
@@ -781,7 +793,7 @@ export default function Home() {
                                 <span>
                                   Download Selected (
                                   {state.videoMetadata?.images?.filter(
-                                    (img) => img.selected
+                                    (img) => img.selected,
                                   ).length || 0}
                                   )
                                 </span>

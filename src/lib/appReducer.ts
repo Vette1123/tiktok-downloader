@@ -15,6 +15,7 @@ export interface VideoMetadata {
 
 export interface AppState {
   url: string
+  originalUrl: string
   loading: boolean
   downloading: boolean
   downloadingAudio: boolean
@@ -52,11 +53,13 @@ export type AppAction =
         downloadUrl: string
         metadata: VideoMetadata
         audioUrl?: string
+        originalUrl: string
       }
     }
 
 export const initialState: AppState = {
   url: '',
+  originalUrl: '',
   loading: false,
   downloading: false,
   downloadingAudio: false,
@@ -121,7 +124,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
               images: state.videoMetadata.images?.map((img) =>
                 img.id === action.payload
                   ? { ...img, selected: !img.selected }
-                  : img
+                  : img,
               ),
             }
           : null,
@@ -147,6 +150,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         message: '',
         downloadUrl: '',
         audioUrl: '',
+        originalUrl: '',
         videoMetadata: null,
         showPreview: false,
         showImageGallery: false,
@@ -158,6 +162,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         message: 'Content processed successfully!',
         downloadUrl: action.payload.downloadUrl,
         audioUrl: action.payload.audioUrl || '',
+        originalUrl: action.payload.originalUrl,
         videoMetadata: action.payload.metadata,
         showPreview: true,
       }
