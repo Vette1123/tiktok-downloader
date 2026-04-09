@@ -352,12 +352,6 @@ export default function Home() {
             </a>
           </div>
         </div>{' '}
-        {/* Ad Banner - Between Header and Main Content */}
-        <AdBanner
-          slot='1234567890'
-          format='horizontal'
-          className='my-4 md:my-6'
-        />
         <div
           className={`grid gap-6 lg:gap-8 transition-all duration-300 ${
             state.videoMetadata && !state.showPreview && !state.showImageGallery
