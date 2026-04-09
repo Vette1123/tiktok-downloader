@@ -114,6 +114,7 @@ export default function RootLayout({
         <link rel='manifest' href='/manifest.json' />
         <meta name='theme-color' content='#7c3aed' />
         <meta name='msapplication-TileColor' content='#7c3aed' />
+        <meta name='google-adsense-account' content='ca-pub-3842960431278714' />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
