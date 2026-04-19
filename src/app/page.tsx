@@ -1090,20 +1090,18 @@ export default function Home() {
               Save any TikTok or Twitter/X post in a couple of clicks. Paste the
               link, preview the content, and download the full-quality video,
               the original MP3 soundtrack, or every image from a TikTok photo
-              carousel. Everything happens in your browser — no app, no
-              sign-up, no watermark.
+              carousel. Everything happens in your browser — no app, no sign-up,
+              no watermark.
             </p>
           </div>
 
           <div className='grid md:grid-cols-3 gap-4'>
             <article className='bg-white/5 rounded-xl p-4 border border-white/10'>
-              <h3 className='text-white font-semibold mb-2'>
-                🎬 Videos in HD
-              </h3>
+              <h3 className='text-white font-semibold mb-2'>🎬 Videos in HD</h3>
               <p className='text-sm'>
-                Watermark-free TikTok downloads and native Twitter/X video
-                rips, served with proper range requests so preview and seeking
-                work flawlessly.
+                Watermark-free TikTok downloads and native Twitter/X video rips,
+                served with proper range requests so preview and seeking work
+                flawlessly.
               </p>
             </article>
             <article className='bg-white/5 rounded-xl p-4 border border-white/10'>
@@ -1163,8 +1161,8 @@ export default function Home() {
                 <AccordionContent>
                   Paste the slideshow URL. The app lists every image, the
                   background track, and — when TikTok provides one — the full
-                  rendered slideshow video, so you can grab the photos, the
-                  MP3, or the MP4 in a single flow.
+                  rendered slideshow video, so you can grab the photos, the MP3,
+                  or the MP4 in a single flow.
                 </AccordionContent>
               </AccordionItem>
               <AccordionItem value='faq-4'>
@@ -1177,9 +1175,8 @@ export default function Home() {
             </Accordion>
           </div>
         </section>
-
         {/* Ad Banner - Bottom of Page */}
-        <AdBanner slot='0987654321' format='auto' className='mt-6' />
+        {/* <AdBanner slot='0987654321' format='auto' className='mt-6' /> */}
       </div>
 
       {lightboxIndex !== null && state.videoMetadata?.images && (
