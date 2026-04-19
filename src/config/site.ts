@@ -1,46 +1,47 @@
 export type SiteConfig = typeof siteConfig
 
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.mohamedgado.site'
+
 export const siteConfig = {
-  name: 'Mohamed Gado',
+  name: 'Social Media Downloader',
+  shortName: 'SM Downloader',
+  tagline: 'Download TikTok & Twitter/X videos without watermarks',
   description:
-    'Mohamed Gado is a software engineer who builds accessible, inclusive products and digital experiences for the web.',
-  mainNav: [
-    {
-      title: 'Home',
-      href: '/',
-    },
-  ],
-  image:
-    'https://pbs.twimg.com/profile_images/1446549954231738370/IVkXC16N_400x400.jpg',
-  ogImage: 'https://www.mohamedgado.com/og.jpg',
+    'Free, fast, and watermark-free downloader for TikTok and Twitter/X. Save HD videos, extract MP3 audio, and download TikTok photo carousels (slideshows) with the original soundtrack — no login or install required.',
+  url: siteUrl,
+  author: {
+    name: 'Mohamed Gado',
+    url: 'https://www.mohamedgado.com',
+    email: 'boogado@yahoo.com',
+    twitter: '@Sadge1996',
+  },
   links: {
     twitter: 'https://twitter.com/Sadge1996',
-    github: 'https://github.com/Vette1123',
-    websiteUrl: 'https://www.mohamedgado.com',
+    github: 'https://github.com/Vette1123/tiktok-downloader',
+    portfolio: 'https://www.mohamedgado.com',
   },
-  openGraph: {
-    locale: 'en_US',
-    type: 'website',
-  },
-  email: 'boogado@yahoo.com',
+  ogImage: `${siteUrl}/og.jpg`,
   twitterTag: '@Sadge1996',
   keywords: [
-    'Software Engineer',
-    'Frontend Engineer',
-    'Web Developer',
-    'React',
-    'TypeScript',
-    'JavaScript',
-    'Node.js',
-    'Mohamed Gado',
-    'Gado',
-    'React Developer',
-    'React Engineer',
-    'React.js',
-    'ReactJS',
-    'React Developer',
-    'Next.js',
-    'NextJS',
-    'Next.js Developer',
+    'TikTok downloader',
+    'TikTok video downloader',
+    'TikTok downloader no watermark',
+    'download TikTok without watermark',
+    'TikTok MP3 downloader',
+    'TikTok audio extractor',
+    'TikTok slideshow downloader',
+    'TikTok photo carousel downloader',
+    'Twitter video downloader',
+    'Twitter/X video downloader',
+    'X video downloader',
+    'social media downloader',
+    'save TikTok videos',
+    'download Twitter videos',
+    'free video downloader',
+    'HD video downloader',
+    'watermark remover',
+    'TikTok to MP3',
+    'TikTok image downloader',
   ],
 }

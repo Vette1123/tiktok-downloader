@@ -1,6 +1,6 @@
 'use client'
 
-import { useReducer, useRef } from 'react'
+import { useReducer, useRef, useState } from 'react'
 import { appReducer, initialState } from '@/lib/appReducer'
 import {
   TikTokIcon,
@@ -14,10 +14,18 @@ import {
   getImagePlaceholderBase64,
 } from '@/components/icons'
 import { AdBanner } from '@/components/AdBanner'
+import { ImageLightbox } from '@/components/ImageLightbox'
+import {
+  Accordion,
+  AccordionItem,
+  AccordionTrigger,
+  AccordionContent,
+} from '@/components/ui/accordion'
 
 export default function Home() {
   const [state, dispatch] = useReducer(appReducer, initialState)
   const containerRef = useRef<HTMLDivElement>(null)
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
 
   const handleProcess = async () => {
     if (!state.url.trim()) {
@@ -120,6 +128,63 @@ export default function Home() {
       dispatch({
         type: 'SET_MESSAGE',
         payload: 'Failed to download video file',
+      })
+    } finally {
+      dispatch({ type: 'SET_DOWNLOADING', payload: false })
+    }
+  }
+
+  const handleSlideshowRender = async () => {
+    const images = state.videoMetadata?.images
+    const rawMusicUrl = state.videoMetadata?.rawMusicUrl
+    if (!images || images.length === 0) return
+
+    dispatch({ type: 'SET_DOWNLOADING', payload: true })
+    dispatch({
+      type: 'SET_MESSAGE',
+      payload: 'Rendering slideshow video... this takes ~30 seconds.',
+    })
+
+    try {
+      const response = await fetch('/api/slideshow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageUrls: images.map((img) => img.url),
+          audioUrl: rawMusicUrl,
+          perImageSeconds: 3,
+        }),
+      })
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}))
+        throw new Error(err.error || 'Failed to render slideshow')
+      }
+
+      const blob = await response.blob()
+      const blobUrl = URL.createObjectURL(blob)
+
+      const link = document.createElement('a')
+      link.href = blobUrl
+      link.download = `tiktok-slideshow-${Date.now()}.mp4`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(blobUrl)
+
+      dispatch({
+        type: 'SET_MESSAGE',
+        payload: 'Slideshow video rendered and downloaded! 🎬',
+      })
+      dispatch({ type: 'SET_URL', payload: '' })
+    } catch (error) {
+      console.error('Slideshow render failed:', error)
+      dispatch({
+        type: 'SET_MESSAGE',
+        payload:
+          error instanceof Error
+            ? `Slideshow render failed: ${error.message}`
+            : 'Failed to render slideshow video',
       })
     } finally {
       dispatch({ type: 'SET_DOWNLOADING', payload: false })
@@ -644,7 +709,7 @@ export default function Home() {
                       })()}
                   </div>
                 </div>
-                {/* Preview Toggle */}
+                {/* Preview Toggle (video only) */}
                 {state.downloadUrl && (
                   <button
                     onClick={togglePreview}
@@ -656,11 +721,13 @@ export default function Home() {
                 {/* Video Preview */}
                 {state.showPreview && state.downloadUrl && (
                   <div className='space-y-3'>
-                    <div className='bg-black/50 rounded-lg overflow-hidden'>
+                    <div className='bg-black rounded-xl overflow-hidden ring-1 ring-white/10 shadow-lg'>
                       <video
                         src={state.downloadUrl}
+                        poster={state.videoMetadata?.thumbnail || undefined}
                         controls
-                        className='w-full h-auto max-h-48 md:max-h-64 object-contain'
+                        playsInline
+                        className='w-full h-auto max-h-[60vh] object-contain bg-black'
                         preload='metadata'
                         onError={(e) => {
                           console.error('Video preview error:', e)
@@ -675,8 +742,35 @@ export default function Home() {
                       </video>
                     </div>
                     <p className='text-white/50 text-xs text-center'>
-                      ⚡ Preview loaded - ready to download!
+                      ⚡ Preview loaded — ready to download!
                     </p>
+                  </div>
+                )}
+                {/* Photo Carousel Audio Preview */}
+                {state.videoMetadata?.isPhotoCarousel && state.audioUrl && (
+                  <div className='space-y-3 bg-gradient-to-br from-green-500/10 to-blue-500/10 rounded-xl p-4 border border-white/10'>
+                    <div className='flex items-center gap-2 text-white'>
+                      <MusicIcon className='w-5 h-5 text-green-300' />
+                      <div className='flex-1 min-w-0'>
+                        <p className='text-sm font-semibold truncate'>
+                          {state.videoMetadata.musicTitle ||
+                            'Slideshow soundtrack'}
+                        </p>
+                        {state.videoMetadata.musicAuthor && (
+                          <p className='text-xs text-white/60 truncate'>
+                            by {state.videoMetadata.musicAuthor}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <audio
+                      src={state.audioUrl}
+                      controls
+                      preload='metadata'
+                      className='w-full'
+                    >
+                      Your browser does not support the audio element.
+                    </audio>
                   </div>
                 )}
                 {/* Image Gallery */}
@@ -720,48 +814,62 @@ export default function Home() {
                             {state.videoMetadata.images.map((image, index) => (
                               <div
                                 key={image.id}
-                                className={`relative rounded-lg overflow-hidden cursor-pointer transition-all duration-200 ${
+                                className={`group relative rounded-lg overflow-hidden transition-all duration-200 ${
                                   image.selected
                                     ? 'ring-2 ring-pink-500'
                                     : 'hover:ring-2 hover:ring-white/30'
                                 }`}
-                                onClick={() => toggleImageSelection(image.id)}
                               >
-                                <img
-                                  src={image.thumbnail}
-                                  alt={`TikTok image ${index + 1}`}
-                                  className='w-full h-24 md:h-32 object-cover'
-                                  onError={(e) => {
-                                    e.currentTarget.src =
-                                      getImagePlaceholderBase64()
-                                  }}
-                                />
+                                <button
+                                  type='button'
+                                  onClick={() => setLightboxIndex(index)}
+                                  className='block w-full cursor-zoom-in'
+                                  aria-label={`Open image ${index + 1} full size`}
+                                >
+                                  <img
+                                    src={image.thumbnail}
+                                    alt={`Slideshow image ${index + 1}`}
+                                    className='w-full h-24 md:h-32 object-cover transition-transform duration-200 group-hover:scale-105'
+                                    loading='lazy'
+                                    onError={(e) => {
+                                      e.currentTarget.src =
+                                        getImagePlaceholderBase64()
+                                    }}
+                                  />
+                                </button>
 
-                                {/* Selection Overlay */}
-                                <div
-                                  className={`absolute inset-0 flex items-center justify-center transition-opacity duration-200 ${
+                                {/* Selection Toggle (separate from preview) */}
+                                <button
+                                  type='button'
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    toggleImageSelection(image.id)
+                                  }}
+                                  aria-pressed={image.selected}
+                                  aria-label={
                                     image.selected
-                                      ? 'bg-pink-500/20'
-                                      : 'bg-black/0 hover:bg-black/20'
+                                      ? `Deselect image ${index + 1}`
+                                      : `Select image ${index + 1}`
+                                  }
+                                  className={`absolute top-1 right-1 w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all duration-200 backdrop-blur-sm ${
+                                    image.selected
+                                      ? 'bg-pink-500 border-pink-500'
+                                      : 'bg-black/40 border-white/50 hover:border-white hover:bg-black/60'
                                   }`}
                                 >
-                                  <div
-                                    className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all duration-200 ${
-                                      image.selected
-                                        ? 'bg-pink-500 border-pink-500'
-                                        : 'border-white/50 hover:border-white'
-                                    }`}
-                                  >
-                                    {' '}
-                                    {image.selected && (
-                                      <CheckIcon className='w-4 h-4 text-white' />
-                                    )}
-                                  </div>
-                                </div>
+                                  {image.selected && (
+                                    <CheckIcon className='w-4 h-4 text-white' />
+                                  )}
+                                </button>
 
                                 {/* Image Number */}
-                                <div className='absolute top-1 left-1 bg-black/50 text-white text-xs px-2 py-1 rounded'>
+                                <div className='absolute top-1 left-1 bg-black/60 text-white text-xs font-medium px-2 py-0.5 rounded'>
                                   {index + 1}
+                                </div>
+
+                                {/* Hover hint */}
+                                <div className='pointer-events-none absolute bottom-1 left-1 right-1 text-[10px] text-white/80 bg-black/40 rounded px-1.5 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity text-center'>
+                                  Click to preview
                                 </div>
                               </div>
                             ))}{' '}
@@ -831,53 +939,87 @@ export default function Home() {
                     </div>
                   )}{' '}
                 {/* Download Buttons */}
-                {(state.downloadUrl || state.audioUrl) && (
-                  <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
-                    {state.downloadUrl && (
-                      <button
-                        onClick={handleVideoDownload}
-                        disabled={state.downloading || state.downloadingImages}
-                        className='py-3 cursor-pointer px-4 bg-gradient-to-r from-pink-500 to-violet-500 hover:from-pink-600 hover:to-violet-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center text-sm md:text-base gap-2'
-                      >
-                        {' '}
-                        {state.downloading ? (
-                          <>
-                            <SpinnerIcon className='flex-shrink-0 h-4 w-4 text-white' />
-                            <span>Downloading...</span>
-                          </>
-                        ) : (
-                          <>
-                            <DownloadIcon className='flex-shrink-0 h-5 w-5 text-white' />
-                            <span>Video</span>
-                          </>
-                        )}
-                      </button>
-                    )}
+                {(() => {
+                  const hasImagesForSlideshow =
+                    state.videoMetadata?.isPhotoCarousel &&
+                    (state.videoMetadata?.images?.length ?? 0) > 0
+                  const showVideoButton =
+                    !!state.downloadUrl || hasImagesForSlideshow
+                  const showAudioButton = !!state.audioUrl
+                  if (!showVideoButton && !showAudioButton) return null
+                  return (
+                    <div
+                      className={`grid gap-3 ${
+                        showVideoButton && showAudioButton
+                          ? 'grid-cols-1 md:grid-cols-2'
+                          : 'grid-cols-1'
+                      }`}
+                    >
+                      {showVideoButton && (
+                        <button
+                          onClick={
+                            state.downloadUrl
+                              ? handleVideoDownload
+                              : handleSlideshowRender
+                          }
+                          disabled={
+                            state.downloading || state.downloadingImages
+                          }
+                          className='py-3 cursor-pointer px-4 bg-gradient-to-r from-pink-500 to-violet-500 hover:from-pink-600 hover:to-violet-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center text-sm md:text-base gap-2'
+                        >
+                          {' '}
+                          {state.downloading ? (
+                            <>
+                              <SpinnerIcon className='flex-shrink-0 h-4 w-4 text-white' />
+                              <span>
+                                {state.videoMetadata?.isPhotoCarousel &&
+                                !state.downloadUrl
+                                  ? 'Rendering...'
+                                  : 'Downloading...'}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <DownloadIcon className='flex-shrink-0 h-5 w-5 text-white' />
+                              <span>
+                                {state.videoMetadata?.isPhotoCarousel
+                                  ? 'Video (slideshow)'
+                                  : 'Video'}
+                              </span>
+                            </>
+                          )}
+                        </button>
+                      )}
 
-                    {state.audioUrl && (
-                      <button
-                        onClick={handleAudioDownload}
-                        disabled={
-                          state.downloadingAudio || state.downloadingImages
-                        }
-                        className='py-3 cursor-pointer px-4 bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center text-sm md:text-base gap-2'
-                      >
-                        {' '}
-                        {state.downloadingAudio ? (
-                          <>
-                            <SpinnerIcon className='flex-shrink-0 h-4 w-4 text-white' />
-                            <span>Extracting...</span>
-                          </>
-                        ) : (
-                          <>
-                            <MusicIcon className='flex-shrink-0 h-5 w-5 text-white' />
-                            <span>Extract Audio</span>
-                          </>
-                        )}
-                      </button>
-                    )}
-                  </div>
-                )}
+                      {showAudioButton && (
+                        <button
+                          onClick={handleAudioDownload}
+                          disabled={
+                            state.downloadingAudio || state.downloadingImages
+                          }
+                          className='py-3 cursor-pointer px-4 bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center text-sm md:text-base gap-2'
+                        >
+                          {' '}
+                          {state.downloadingAudio ? (
+                            <>
+                              <SpinnerIcon className='flex-shrink-0 h-4 w-4 text-white' />
+                              <span>Downloading...</span>
+                            </>
+                          ) : (
+                            <>
+                              <MusicIcon className='flex-shrink-0 h-5 w-5 text-white' />
+                              <span>
+                                {state.videoMetadata?.isPhotoCarousel
+                                  ? 'Download Audio'
+                                  : 'Extract Audio'}
+                              </span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  )
+                })()}
                 {(state.downloadUrl || state.audioUrl) && (
                   <p className='text-white/50 text-xs text-center'>
                     {state.downloading ||
@@ -932,9 +1074,135 @@ export default function Home() {
             </div>
           </div>
         </div>
+        {/* SEO Content: how-to + FAQ (mirrors JSON-LD FAQ schema) */}
+        <section
+          aria-labelledby='seo-heading'
+          className='mt-10 space-y-6 text-white/80'
+        >
+          <div>
+            <h2
+              id='seo-heading'
+              className='text-xl md:text-2xl font-bold text-white mb-3'
+            >
+              Free TikTok &amp; Twitter/X Video Downloader
+            </h2>
+            <p className='text-sm md:text-base leading-relaxed'>
+              Save any TikTok or Twitter/X post in a couple of clicks. Paste the
+              link, preview the content, and download the full-quality video,
+              the original MP3 soundtrack, or every image from a TikTok photo
+              carousel. Everything happens in your browser — no app, no
+              sign-up, no watermark.
+            </p>
+          </div>
+
+          <div className='grid md:grid-cols-3 gap-4'>
+            <article className='bg-white/5 rounded-xl p-4 border border-white/10'>
+              <h3 className='text-white font-semibold mb-2'>
+                🎬 Videos in HD
+              </h3>
+              <p className='text-sm'>
+                Watermark-free TikTok downloads and native Twitter/X video
+                rips, served with proper range requests so preview and seeking
+                work flawlessly.
+              </p>
+            </article>
+            <article className='bg-white/5 rounded-xl p-4 border border-white/10'>
+              <h3 className='text-white font-semibold mb-2'>
+                🎵 MP3 audio extraction
+              </h3>
+              <p className='text-sm'>
+                Pull the soundtrack from any TikTok video or slideshow. Photo
+                carousels keep the original background music — perfect for
+                trending sounds.
+              </p>
+            </article>
+            <article className='bg-white/5 rounded-xl p-4 border border-white/10'>
+              <h3 className='text-white font-semibold mb-2'>
+                🖼️ Photo carousels
+              </h3>
+              <p className='text-sm'>
+                TikTok slideshows come through as a full-resolution gallery.
+                Preview, pick favorites, then save individually or as a single
+                ZIP.
+              </p>
+            </article>
+          </div>
+
+          <div>
+            <h2 className='text-xl md:text-2xl font-bold text-white mb-3'>
+              Frequently asked questions
+            </h2>
+            <Accordion
+              type='single'
+              collapsible
+              defaultValue='faq-1'
+              className='space-y-3'
+            >
+              <AccordionItem value='faq-1'>
+                <AccordionTrigger>
+                  Is this TikTok downloader free?
+                </AccordionTrigger>
+                <AccordionContent>
+                  Yes — completely free, with no sign-up and no daily download
+                  limit.
+                </AccordionContent>
+              </AccordionItem>
+              <AccordionItem value='faq-2'>
+                <AccordionTrigger>
+                  Do downloaded TikTok videos have a watermark?
+                </AccordionTrigger>
+                <AccordionContent>
+                  No. Videos are saved in HD quality, free of the TikTok
+                  watermark.
+                </AccordionContent>
+              </AccordionItem>
+              <AccordionItem value='faq-3'>
+                <AccordionTrigger>
+                  Can I download a TikTok photo carousel (slideshow)?
+                </AccordionTrigger>
+                <AccordionContent>
+                  Paste the slideshow URL. The app lists every image, the
+                  background track, and — when TikTok provides one — the full
+                  rendered slideshow video, so you can grab the photos, the
+                  MP3, or the MP4 in a single flow.
+                </AccordionContent>
+              </AccordionItem>
+              <AccordionItem value='faq-4'>
+                <AccordionTrigger>Does it work on Twitter/X?</AccordionTrigger>
+                <AccordionContent>
+                  Yes — paste any twitter.com or x.com status URL and the tool
+                  resolves the underlying media automatically.
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          </div>
+        </section>
+
         {/* Ad Banner - Bottom of Page */}
         <AdBanner slot='0987654321' format='auto' className='mt-6' />
       </div>
+
+      {lightboxIndex !== null && state.videoMetadata?.images && (
+        <ImageLightbox
+          images={state.videoMetadata.images}
+          activeIndex={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          onPrev={() =>
+            setLightboxIndex((i) => {
+              const total = state.videoMetadata?.images?.length ?? 0
+              if (i === null || total === 0) return i
+              return (i - 1 + total) % total
+            })
+          }
+          onNext={() =>
+            setLightboxIndex((i) => {
+              const total = state.videoMetadata?.images?.length ?? 0
+              if (i === null || total === 0) return i
+              return (i + 1) % total
+            })
+          }
+        />
+      )}
     </div>
   )
 }

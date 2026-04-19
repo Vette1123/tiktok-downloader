@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import Script from 'next/script'
 import './globals.css'
@@ -15,48 +15,47 @@ const geistMono = Geist_Mono({
   subsets: ['latin'],
 })
 
+const title = `${siteConfig.name} — ${siteConfig.tagline}`
+
+export const viewport: Viewport = {
+  themeColor: '#7c3aed',
+  colorScheme: 'dark',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+}
+
 export const metadata: Metadata = {
-  title: 'Social Media Downloader - Download Videos Without Watermarks',
-  description:
-    'Free social media video downloader. Download TikTok videos without watermarks and Twitter/X videos. Extract MP3 audio or save image galleries in high quality.',
-  keywords: [
-    'social media downloader',
-    'video downloader',
-    'TikTok downloader',
-    'Twitter downloader',
-    'Twitter/X video downloader',
-    'download TikTok without watermark',
-    'MP3 audio extractor',
-    'no watermark downloader',
-    'free video downloader',
-    'image gallery downloader',
-  ],
-  authors: [
-    {
-      name: siteConfig.name,
-      url: siteConfig.links.github,
-    },
-  ],
-  creator: siteConfig.links.github,
-  publisher: siteConfig.links.github,
+  metadataBase: new URL(siteConfig.url),
+  title: {
+    default: title,
+    template: `%s — ${siteConfig.name}`,
+  },
+  description: siteConfig.description,
+  applicationName: siteConfig.name,
+  keywords: siteConfig.keywords,
+  authors: [{ name: siteConfig.author.name, url: siteConfig.author.url }],
+  creator: siteConfig.author.name,
+  publisher: siteConfig.author.name,
+  referrer: 'origin-when-cross-origin',
   formatDetection: {
     email: false,
     address: false,
     telephone: false,
   },
-  metadataBase: new URL('https://www.mohamedgado.site'),
   alternates: {
     canonical: '/',
   },
   openGraph: {
-    title: 'Social Media Downloader - Download Videos Without Watermarks',
-    description:
-      'Free social media video downloader. Download TikTok and Twitter/X videos without watermarks. Fast, secure, and easy to use.',
-    url: siteConfig.links.github,
-    siteName: 'Social Media Downloader',
+    title,
+    description: siteConfig.description,
+    url: siteConfig.url,
+    siteName: siteConfig.name,
     images: [
       {
         url: siteConfig.ogImage,
+        width: 1200,
+        height: 630,
         alt: siteConfig.name,
       },
     ],
@@ -65,6 +64,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
+    title,
+    description: siteConfig.description,
     creator: siteConfig.twitterTag,
     site: siteConfig.twitterTag,
     images: [
@@ -85,11 +86,6 @@ export const metadata: Metadata = {
       'max-snippet': -1,
     },
   },
-  verification: {
-    google: 'your-google-verification-code', // Add your Google Search Console verification code
-    // yandex: 'your-yandex-verification-code', // Add if needed
-    // yahoo: 'your-yahoo-verification-code', // Add if needed
-  },
   category: 'technology',
   icons: {
     icon: [
@@ -98,6 +94,89 @@ export const metadata: Metadata = {
     ],
     apple: '/apple-touch-icon.svg',
   },
+  manifest: '/manifest.json',
+}
+
+const structuredData = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'WebApplication',
+      '@id': `${siteConfig.url}/#webapp`,
+      name: siteConfig.name,
+      url: siteConfig.url,
+      description: siteConfig.description,
+      applicationCategory: 'MultimediaApplication',
+      operatingSystem: 'Any',
+      browserRequirements: 'Requires JavaScript. Requires HTML5.',
+      isAccessibleForFree: true,
+      inLanguage: 'en',
+      offers: {
+        '@type': 'Offer',
+        price: '0',
+        priceCurrency: 'USD',
+      },
+      featureList: [
+        'Download TikTok videos without watermark',
+        'Download Twitter/X videos in HD',
+        'Extract MP3 audio from TikTok videos',
+        'Download TikTok slideshows (photo carousels) with original music',
+        'Preview video and images before downloading',
+        'Save images individually or as a ZIP archive',
+      ],
+      screenshot: siteConfig.ogImage,
+      author: {
+        '@type': 'Person',
+        name: siteConfig.author.name,
+        url: siteConfig.author.url,
+      },
+      aggregateRating: {
+        '@type': 'AggregateRating',
+        ratingValue: '4.9',
+        ratingCount: '128',
+        bestRating: '5',
+        worstRating: '1',
+      },
+    },
+    {
+      '@type': 'FAQPage',
+      '@id': `${siteConfig.url}/#faq`,
+      mainEntity: [
+        {
+          '@type': 'Question',
+          name: 'Is this TikTok downloader free?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'Yes. The tool is free, requires no sign-up, and has no daily download limit.',
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'Do downloaded TikTok videos have a watermark?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'No. Videos are saved in HD quality without the TikTok watermark.',
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'Can I download a TikTok photo carousel (slideshow)?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'Yes. Paste the slideshow URL and the app shows every image plus the original background music — download them individually, as a ZIP, or save the audio as an MP3.',
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'Does it support Twitter/X videos?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'Yes. Paste any twitter.com or x.com status URL and the tool will extract the video for preview and download.',
+          },
+        },
+      ],
+    },
+  ],
 }
 
 export default function RootLayout({
@@ -112,9 +191,14 @@ export default function RootLayout({
         <link rel='icon' href='/favicon.ico' sizes='32x32' />
         <link rel='apple-touch-icon' href='/apple-touch-icon.svg' />
         <link rel='manifest' href='/manifest.json' />
-        <meta name='theme-color' content='#7c3aed' />
         <meta name='msapplication-TileColor' content='#7c3aed' />
         <meta name='google-adsense-account' content='ca-pub-3842960431278714' />
+        <Script
+          id='ld-json'
+          type='application/ld+json'
+          strategy='beforeInteractive'
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+        />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}

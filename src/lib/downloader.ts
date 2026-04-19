@@ -419,8 +419,10 @@ export class Downloader {
 
         let downloadUrl: string | undefined
 
+        // Photo carousels: skip tikwm's `play` URL — for slideshow posts it
+        // points to an audio-only MP4 with no image frames. The /api/slideshow
+        // route renders a proper images+music MP4 on demand instead.
         if (!isPhotoCarousel) {
-          // Resolve all candidate video URLs to absolute
           const hdplayUrl = toAbsolute(data.hdplay)
           const playUrl = toAbsolute(data.play)
           const wmplayUrl = toAbsolute(data.wmplay)
@@ -442,7 +444,12 @@ export class Downloader {
             downloadUrl = playUrl || wmplayUrl
           }
         }
-        // For photo carousels there is no video; downloadUrl stays undefined
+
+        // Slideshow soundtrack (TikTok photo carousels always have a music track)
+        const musicUrl =
+          toAbsolute(data.music_info?.play) || toAbsolute(data.music)
+        const musicTitle = data.music_info?.title
+        const musicAuthor = data.music_info?.author
 
         return {
           id: videoId,
@@ -455,6 +462,9 @@ export class Downloader {
           downloadUrl: downloadUrl ?? '',
           images,
           isPhotoCarousel,
+          musicUrl,
+          musicTitle,
+          musicAuthor,
         }
       }
     } catch (e) {

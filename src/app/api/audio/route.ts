@@ -41,29 +41,41 @@ export async function GET(request: NextRequest) {
     }
     if (referer) headers['Referer'] = referer
 
+    // Forward Range header for audio seeking when the client supports it
+    const rangeHeader = request.headers.get('range')
+    if (rangeHeader) headers['Range'] = rangeHeader
+
     const response = await fetch(videoUrl, { headers, redirect: 'follow' })
 
-    if (!response.ok) {
+    if (!response.ok && response.status !== 206) {
       throw new Error(
         `Failed to fetch audio: ${response.status} ${response.statusText}`,
       )
     }
 
-    const audioBuffer = await response.arrayBuffer()
-
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
     const filename = `social-audio-${timestamp}.mp3`
 
-    // Serve the video stream as audio/mpeg — browsers and media players
-    // extract the audio track from the MP4 container automatically
-    return new NextResponse(audioBuffer, {
-      headers: {
-        'Content-Type': 'audio/mpeg',
-        'Content-Disposition': `attachment; filename="${filename}"`,
-        'Content-Length': audioBuffer.byteLength.toString(),
-        'Cache-Control': 'no-cache',
-        'Access-Control-Allow-Origin': '*',
-      },
+    const responseHeaders: Record<string, string> = {
+      'Content-Type': 'audio/mpeg',
+      'Content-Disposition': `inline; filename="${filename}"`,
+      'Cache-Control': 'no-cache',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET',
+      'Access-Control-Allow-Headers': 'Content-Type, Range',
+      'Accept-Ranges': 'bytes',
+    }
+
+    const contentLength = response.headers.get('content-length')
+    if (contentLength) responseHeaders['Content-Length'] = contentLength
+    const contentRange = response.headers.get('content-range')
+    if (contentRange) responseHeaders['Content-Range'] = contentRange
+
+    // Stream the body directly — works for real MP3 sources (slideshow music)
+    // AND for MP4 video streams (browsers extract the audio track automatically).
+    return new NextResponse(response.body, {
+      status: response.status,
+      headers: responseHeaders,
     })
   } catch (error) {
     console.error('Audio extraction error:', error)

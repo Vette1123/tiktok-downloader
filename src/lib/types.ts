@@ -15,6 +15,9 @@ export interface VideoData {
   downloadUrl: string
   images?: ImageData[]
   isPhotoCarousel?: boolean
+  musicUrl?: string
+  musicTitle?: string
+  musicAuthor?: string
 }
 
 export interface ProcessedVideo {

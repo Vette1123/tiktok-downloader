@@ -14,6 +14,10 @@ export interface VideoMetadata {
   thumbnail: string
   images?: ImageData[]
   platform?: SupportedPlatform
+  isPhotoCarousel?: boolean
+  musicTitle?: string
+  musicAuthor?: string
+  rawMusicUrl?: string
 }
 
 export interface AppState {
@@ -159,16 +163,24 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         showImageGallery: false,
       }
 
-    case 'SET_DOWNLOAD_SUCCESS':
+    case 'SET_DOWNLOAD_SUCCESS': {
+      const meta = action.payload.metadata
+      const hasImages = !!meta.images && meta.images.length > 0
+      const isCarousel = meta.isPhotoCarousel || hasImages
+      const hasVideo = !!action.payload.downloadUrl
       return {
         ...state,
         message: 'Content processed successfully!',
         downloadUrl: action.payload.downloadUrl,
         audioUrl: action.payload.audioUrl || '',
         originalUrl: action.payload.originalUrl,
-        videoMetadata: action.payload.metadata,
-        showPreview: true,
+        videoMetadata: meta,
+        // Open the video preview by default for non-carousel posts;
+        // for carousels keep it collapsed (user can toggle) so the gallery dominates.
+        showPreview: hasVideo && !isCarousel,
+        showImageGallery: hasImages,
       }
+    }
 
     default:
       return state
