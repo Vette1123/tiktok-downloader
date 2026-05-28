@@ -1,6 +1,7 @@
 'use client'
 
 import { useReducer, useRef, useState } from 'react'
+import { motion, AnimatePresence } from 'motion/react'
 import { appReducer, initialState } from '@/lib/appReducer'
 import {
   TikTokIcon,
@@ -13,7 +14,6 @@ import {
   CheckIcon,
   getImagePlaceholderBase64,
 } from '@/components/icons'
-import { AdBanner } from '@/components/AdBanner'
 import { ImageLightbox } from '@/components/ImageLightbox'
 import {
   Accordion,
@@ -26,12 +26,14 @@ export default function Home() {
   const [state, dispatch] = useReducer(appReducer, initialState)
   const containerRef = useRef<HTMLDivElement>(null)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
+  const [urlError, setUrlError] = useState<string | null>(null)
 
   const handleProcess = async () => {
     if (!state.url.trim()) {
-      dispatch({ type: 'SET_MESSAGE', payload: 'Please enter a URL' })
+      setUrlError('Please paste a TikTok or Twitter/X URL first')
       return
     }
+    setUrlError(null)
 
     dispatch({ type: 'SET_LOADING', payload: true })
     dispatch({ type: 'RESET_DOWNLOAD_STATE' })
@@ -364,14 +366,40 @@ export default function Home() {
     dispatch({ type: 'TOGGLE_PREVIEW' })
   }
   return (
-    <div className='min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center p-4'>
-      <div
+    <div className='relative min-h-screen overflow-clip bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex justify-center items-start py-6 px-4'>
+      <motion.div
+        aria-hidden
+        className='pointer-events-none absolute -top-32 -left-32 h-[28rem] w-[28rem] rounded-full bg-pink-500/30 blur-3xl'
+        animate={{ x: [0, 60, -20, 0], y: [0, 40, -30, 0], scale: [1, 1.1, 0.95, 1] }}
+        transition={{ duration: 18, repeat: Infinity, ease: 'easeInOut' }}
+      />
+      <motion.div
+        aria-hidden
+        className='pointer-events-none absolute -bottom-40 -right-32 h-[32rem] w-[32rem] rounded-full bg-cyan-400/25 blur-3xl'
+        animate={{ x: [0, -50, 30, 0], y: [0, -40, 20, 0], scale: [1, 1.08, 0.97, 1] }}
+        transition={{ duration: 22, repeat: Infinity, ease: 'easeInOut' }}
+      />
+      <motion.div
+        aria-hidden
+        className='pointer-events-none absolute top-1/3 left-1/2 h-[24rem] w-[24rem] -translate-x-1/2 rounded-full bg-violet-500/20 blur-3xl'
+        animate={{ scale: [1, 1.15, 1], opacity: [0.5, 0.8, 0.5] }}
+        transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
+      />
+      <motion.div
         ref={containerRef}
-        className='w-full max-w-sm md:max-w-2xl lg:max-w-5xl xl:max-w-6xl 2xl:max-w-7xl bg-white/10 backdrop-blur-lg rounded-2xl p-4 md:p-8 shadow-2xl border border-white/20'
+        initial={{ opacity: 0, y: 24, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+        className='relative z-10 my-auto w-full max-w-sm md:max-w-2xl lg:max-w-5xl xl:max-w-6xl 2xl:max-w-7xl bg-white/10 backdrop-blur-lg rounded-2xl p-4 md:p-8 shadow-2xl border border-white/20'
       >
         {' '}
         {/* Header */}
-        <div className='text-center mb-6 md:mb-8'>
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.15, ease: 'easeOut' }}
+          className='text-center mb-6 md:mb-8'
+        >
           {' '}
           <div className='flex justify-center mb-4'>
             <div className='flex items-center space-x-3'>
@@ -391,39 +419,57 @@ export default function Home() {
             images from TikTok &amp; Twitter/X
           </p>
           {/* Developer Links */}
-          <div className='flex justify-center items-center space-x-4'>
-            {' '}
-            <a
-              href='https://www.mohamedgado.com/'
-              target='_blank'
-              rel='noopener noreferrer'
-              className='group flex items-center space-x-2 px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg transition-all duration-200 border border-white/20 hover:border-white/40'
-            >
-              <PortfolioIcon className='w-4 h-4 text-white/70 group-hover:text-white transition-colors' />
-              <span className='text-white/70 group-hover:text-white text-sm font-medium transition-colors'>
-                Portfolio
-              </span>
-            </a>{' '}
-            <a
-              href='https://github.com/Vette1123/tiktok-downloader'
-              target='_blank'
-              rel='noopener noreferrer'
-              className='group flex items-center space-x-2 px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg transition-all duration-200 border border-white/20 hover:border-white/40'
-            >
-              <GitHubIcon className='w-4 h-4 text-white/70 group-hover:text-white transition-colors' />
-              <span className='text-white/70 group-hover:text-white text-sm font-medium transition-colors'>
-                GitHub
-              </span>
-            </a>
-          </div>
-        </div>{' '}
-        <div
-          className={`grid gap-6 lg:gap-8 transition-all duration-300 ${
-            state.videoMetadata && !state.showPreview && !state.showImageGallery
-              ? 'grid-cols-1 xl:grid-cols-3'
-              : 'grid-cols-1 lg:grid-cols-2'
-          }`}
-        >
+          <motion.div
+            className='flex justify-center items-center gap-3'
+            initial='hidden'
+            animate='show'
+            variants={{
+              hidden: {},
+              show: { transition: { staggerChildren: 0.1, delayChildren: 0.3 } },
+            }}
+          >
+            {[
+              {
+                href: 'https://www.mohamedgado.com/',
+                label: 'Portfolio',
+                Icon: PortfolioIcon,
+                grad: 'from-pink-500/80 to-violet-500/80',
+              },
+              {
+                href: 'https://github.com/Vette1123/tiktok-downloader',
+                label: 'GitHub',
+                Icon: GitHubIcon,
+                grad: 'from-violet-500/80 to-cyan-400/80',
+              },
+            ].map(({ href, label, Icon, grad }) => (
+              <motion.a
+                key={label}
+                href={href}
+                target='_blank'
+                rel='noopener noreferrer'
+                variants={{
+                  hidden: { opacity: 0, y: 10 },
+                  show: { opacity: 1, y: 0 },
+                }}
+                whileHover={{ y: -2 }}
+                whileTap={{ scale: 0.96 }}
+                transition={{ type: 'spring', stiffness: 320, damping: 22 }}
+                className='group relative flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/15 overflow-hidden backdrop-blur-sm'
+              >
+                <span
+                  className={`absolute inset-0 bg-gradient-to-r ${grad} opacity-0 group-hover:opacity-100 transition-opacity duration-300`}
+                  aria-hidden
+                />
+                <span className='pointer-events-none absolute inset-0 rounded-xl ring-1 ring-white/10 group-hover:ring-white/30 transition-all duration-300' aria-hidden />
+                <Icon className='relative w-4 h-4 text-white/80 group-hover:text-white transition-colors duration-300' />
+                <span className='relative text-white/80 group-hover:text-white text-sm font-medium transition-colors duration-300'>
+                  {label}
+                </span>
+              </motion.a>
+            ))}
+          </motion.div>
+        </motion.div>{' '}
+        <div className='grid gap-6 lg:gap-8 grid-cols-1 lg:grid-cols-2'>
           {' '}
           {/* Input Section */}
           <div className='space-y-4 xl:col-span-1'>
@@ -432,11 +478,34 @@ export default function Home() {
                 type='text'
                 placeholder='Paste a TikTok or Twitter/X URL...'
                 value={state.url}
-                onChange={(e) =>
+                onChange={(e) => {
+                  if (urlError) setUrlError(null)
                   dispatch({ type: 'SET_URL', payload: e.target.value })
-                }
-                className='w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm md:text-base'
+                }}
+                aria-invalid={urlError ? 'true' : 'false'}
+                aria-describedby={urlError ? 'url-error' : undefined}
+                className={`w-full px-4 py-3 rounded-xl bg-white/10 border text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:border-transparent text-sm md:text-base transition-colors duration-200 ${
+                  urlError
+                    ? 'border-red-400/60 focus:ring-red-400'
+                    : 'border-white/20 focus:ring-pink-500'
+                }`}
               />
+              <AnimatePresence initial={false}>
+                {urlError && (
+                  <motion.p
+                    id='url-error'
+                    role='alert'
+                    initial={{ opacity: 0, y: -4, height: 0 }}
+                    animate={{ opacity: 1, y: 0, height: 'auto' }}
+                    exit={{ opacity: 0, y: -4, height: 0 }}
+                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                    className='mt-2 text-xs md:text-sm text-red-300 flex items-center gap-1.5 overflow-hidden'
+                  >
+                    <span aria-hidden>⚠</span>
+                    {urlError}
+                  </motion.p>
+                )}
+              </AnimatePresence>
             </div>
             {/* Download Type Selection */}
             {/* <div className='flex space-x-2'>
@@ -465,78 +534,88 @@ export default function Home() {
                 🎵 MP3
               </button>
             </div>{' '} */}
-            <button
+            <motion.button
               onClick={handleProcess}
+              whileHover={{ y: -1 }}
+              whileTap={{ scale: 0.985 }}
+              transition={{ type: 'spring', stiffness: 280, damping: 24, mass: 0.6 }}
               disabled={
                 state.loading ||
                 state.downloading ||
                 state.downloadingAudio ||
                 state.downloadingImages
               }
-              className='w-full cursor-pointer py-3 px-4 bg-gradient-to-r from-pink-500 to-violet-500 text-white font-semibold rounded-xl hover:from-pink-600 hover:to-violet-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center text-sm md:text-base'
+              className='group relative w-full cursor-pointer py-3 px-4 bg-gradient-to-r from-pink-500 via-fuchsia-500 to-violet-500 bg-[length:200%_100%] bg-[position:0%_0%] hover:bg-[position:100%_0%] text-white font-semibold rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-[background-position,box-shadow] duration-500 ease-out flex items-center justify-center text-sm md:text-base shadow-lg shadow-pink-500/30 hover:shadow-xl hover:shadow-violet-500/40 overflow-hidden'
             >
-              {' '}
+              <span
+                className='pointer-events-none absolute inset-0 -translate-x-full group-hover:translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-1000 ease-out'
+                aria-hidden
+              />
               {state.loading ? (
-                <>
+                <span className='relative flex items-center'>
                   <SpinnerIcon className='-ml-1 mr-3 h-4 w-4 md:h-5 md:w-5 text-white' />
                   Processing...
-                </>
+                </span>
               ) : (
-                <>Process URL</>
+                <span className='relative'>Process URL</span>
               )}
-            </button>{' '}
-            {/* Features List - Hidden on mobile, shown on desktop */}
-            <div className='hidden lg:block bg-white/5 rounded-xl p-4 mt-6 border border-white/10'>
-              <h3 className='text-white font-semibold mb-4 text-sm md:text-base flex items-center'>
-                ✨ Features
-                <div className='ml-2 w-8 h-0.5 bg-gradient-to-r from-pink-500 to-violet-500 rounded'></div>
-              </h3>
-              <div className='grid grid-cols-1 xl:grid-cols-2 gap-3 text-xs md:text-sm'>
-                <div className='flex items-center space-x-2 text-white/70 hover:text-white/90 transition-colors'>
-                  <div className='w-2 h-2 bg-green-400 rounded-full'></div>
-                  <span>Watermark-free downloads</span>
-                </div>
-                <div className='flex items-center space-x-2 text-white/70 hover:text-white/90 transition-colors'>
-                  <div className='w-2 h-2 bg-blue-400 rounded-full'></div>
-                  <span>HD quality preservation</span>
-                </div>
-                <div className='flex items-center space-x-2 text-white/70 hover:text-white/90 transition-colors'>
-                  <div className='w-2 h-2 bg-purple-400 rounded-full'></div>
-                  <span>MP3 audio extraction</span>
-                </div>
-                <div className='flex items-center space-x-2 text-white/70 hover:text-white/90 transition-colors'>
-                  <div className='w-2 h-2 bg-pink-400 rounded-full'></div>
-                  <span>Video preview</span>
-                </div>
-                <div className='flex items-center space-x-2 text-white/70 hover:text-white/90 transition-colors'>
-                  <div className='w-2 h-2 bg-yellow-400 rounded-full'></div>
-                  <span>Image gallery downloads</span>
-                </div>
-                <div className='flex items-center space-x-2 text-white/70 hover:text-white/90 transition-colors'>
-                  <div className='w-2 h-2 bg-indigo-400 rounded-full'></div>
-                  <span>Multiple URL formats</span>
-                </div>
-                <div className='flex items-center space-x-2 text-white/70 hover:text-white/90 transition-colors'>
-                  <div className='w-2 h-2 bg-teal-400 rounded-full'></div>
-                  <span>Batch image selection</span>
-                </div>
-                <div className='flex items-center space-x-2 text-white/70 hover:text-white/90 transition-colors'>
-                  <div className='w-2 h-2 bg-orange-400 rounded-full'></div>
-                  <span>Fast processing</span>
-                </div>
-              </div>
-            </div>
+            </motion.button>{' '}
+            {/* How it Works - lives on the left, replaces the old Features list */}
+            {!state.videoMetadata && (
+              <motion.div
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.15, ease: 'easeOut' }}
+                className='bg-white/5 rounded-xl p-5 border border-white/10'
+              >
+                <h3 className='text-white font-semibold mb-4 text-sm md:text-base flex items-center'>
+                  🚀 How it works
+                  <div className='ml-2 w-8 h-0.5 bg-gradient-to-r from-pink-500 to-violet-500 rounded' />
+                </h3>
+                <ol className='space-y-3'>
+                  {[
+                    {
+                      n: 1,
+                      title: 'Copy a video URL',
+                      sub: 'From TikTok or Twitter/X',
+                      grad: 'from-pink-500 to-pink-400',
+                    },
+                    {
+                      n: 2,
+                      title: 'Paste & process',
+                      sub: 'We resolve the media in seconds',
+                      grad: 'from-fuchsia-500 to-violet-500',
+                    },
+                    {
+                      n: 3,
+                      title: 'Download',
+                      sub: 'Video, MP3, or full image gallery',
+                      grad: 'from-violet-500 to-cyan-400',
+                    },
+                  ].map((s) => (
+                    <li
+                      key={s.n}
+                      className='flex items-start gap-3 group'
+                    >
+                      <div
+                        className={`shrink-0 w-7 h-7 rounded-full bg-gradient-to-br ${s.grad} flex items-center justify-center text-white text-xs font-bold shadow-md ring-1 ring-white/20`}
+                      >
+                        {s.n}
+                      </div>
+                      <div className='min-w-0'>
+                        <p className='text-white text-sm font-medium leading-tight'>
+                          {s.title}
+                        </p>
+                        <p className='text-white/55 text-xs mt-0.5'>{s.sub}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </motion.div>
+            )}
           </div>{' '}
           {/* Results Section */}
-          <div
-            className={`results-section space-y-4 ${
-              state.videoMetadata &&
-              !state.showPreview &&
-              !state.showImageGallery
-                ? 'xl:col-span-2'
-                : ''
-            }`}
-          >
+          <div className='results-section space-y-4'>
             {state.message && (
               <div
                 className={`p-3 rounded-xl text-center transition-all duration-300 text-sm md:text-base ${
@@ -551,98 +630,125 @@ export default function Home() {
               </div>
             )}
             {!state.videoMetadata && !state.message && (
-              <div className='space-y-4'>
-                {/* Getting Started Card */}
-                <div className='bg-gradient-to-br from-white/5 to-white/10 rounded-xl p-6 border border-white/20'>
-                  <div className='text-center'>
-                    <div className='w-16 h-16 bg-gradient-to-r from-pink-500/20 to-violet-500/20 rounded-full flex items-center justify-center mx-auto mb-4 border border-pink-500/30'>
-                      <TikTokIcon className='w-8 h-8 text-pink-400' />
-                    </div>
-                    <h3 className='text-white font-semibold text-lg mb-2'>
-                      Ready to Download?
-                    </h3>
-                    <p className='text-white/70 text-sm mb-4'>
-                      Paste a TikTok or Twitter/X URL above to get started!
-                    </p>
-                  </div>
-                </div>
-
-                {/* How it Works */}
-                <div className='bg-white/5 rounded-xl p-6 border border-white/10'>
-                  <h3 className='text-white font-semibold mb-4 flex items-center'>
-                    🚀 How it Works
-                    <div className='ml-2 w-8 h-0.5 bg-gradient-to-r from-blue-500 to-purple-500 rounded'></div>
+              <motion.div
+                className='space-y-4'
+                initial='hidden'
+                animate='show'
+                variants={{
+                  hidden: {},
+                  show: { transition: { staggerChildren: 0.08, delayChildren: 0.1 } },
+                }}
+              >
+                {/* What you can do — 2x2 bento grid */}
+                <motion.div
+                  variants={{
+                    hidden: { opacity: 0, y: 16 },
+                    show: { opacity: 1, y: 0 },
+                  }}
+                  transition={{ duration: 0.5, ease: 'easeOut' }}
+                  className='bg-white/5 rounded-xl p-5 border border-white/10'
+                >
+                  <h3 className='text-white font-semibold mb-4 text-sm md:text-base flex items-center'>
+                    ✨ What you can do
+                    <div className='ml-2 w-8 h-0.5 bg-gradient-to-r from-pink-500 to-violet-500 rounded' />
                   </h3>
-                  <div className='space-y-3'>
-                    <div className='flex items-start space-x-3'>
-                      <div className='w-6 h-6 bg-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold mt-0.5'>
-                        1
-                      </div>
-                      <div>
-                        <p className='text-white text-sm font-medium'>
-                          Copy a Video URL
+                  <div className='grid grid-cols-2 gap-3'>
+                    {[
+                      {
+                        emoji: '🎬',
+                        label: 'HD Video',
+                        sub: 'No watermark',
+                        grad: 'from-pink-500/20 to-rose-500/10',
+                        ring: 'ring-pink-500/30',
+                      },
+                      {
+                        emoji: '🎵',
+                        label: 'MP3 audio',
+                        sub: 'Extract soundtrack',
+                        grad: 'from-emerald-500/20 to-teal-500/10',
+                        ring: 'ring-emerald-500/30',
+                      },
+                      {
+                        emoji: '🖼️',
+                        label: 'Slideshow',
+                        sub: 'Image carousels',
+                        grad: 'from-violet-500/20 to-fuchsia-500/10',
+                        ring: 'ring-violet-500/30',
+                      },
+                      {
+                        emoji: '🗜️',
+                        label: 'Batch ZIP',
+                        sub: 'All images at once',
+                        grad: 'from-sky-500/20 to-cyan-500/10',
+                        ring: 'ring-cyan-500/30',
+                      },
+                    ].map((t) => (
+                      <motion.div
+                        key={t.label}
+                        whileHover={{ y: -2 }}
+                        transition={{ type: 'spring', stiffness: 320, damping: 22 }}
+                        className={`bg-gradient-to-br ${t.grad} rounded-lg p-3 ring-1 ${t.ring} border border-white/5`}
+                      >
+                        <div className='text-2xl mb-1.5 leading-none'>{t.emoji}</div>
+                        <p className='text-white text-sm font-semibold leading-tight'>
+                          {t.label}
                         </p>
-                        <p className='text-white/60 text-xs'>
-                          From TikTok or Twitter/X
-                        </p>
-                      </div>
-                    </div>
-                    <div className='flex items-start space-x-3'>
-                      <div className='w-6 h-6 bg-violet-500 rounded-full flex items-center justify-center text-white text-xs font-bold mt-0.5'>
-                        2
-                      </div>
-                      <div>
-                        <p className='text-white text-sm font-medium'>
-                          Paste & Process
-                        </p>
-                        <p className='text-white/60 text-xs'>
-                          Our servers analyze the content
-                        </p>
-                      </div>
-                    </div>
-                    <div className='flex items-start space-x-3'>
-                      <div className='w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs font-bold mt-0.5'>
-                        3
-                      </div>
-                      <div>
-                        <p className='text-white text-sm font-medium'>
-                          Download Content
-                        </p>
-                        <p className='text-white/60 text-xs'>
-                          Video, audio, or images - your choice!
-                        </p>
-                      </div>
-                    </div>
+                        <p className='text-white/55 text-xs mt-0.5'>{t.sub}</p>
+                      </motion.div>
+                    ))}
                   </div>
-                </div>
+                </motion.div>
 
-                {/* Supported Formats */}
-                <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
-                  <div className='bg-white/5 rounded-xl p-4 border border-white/10'>
-                    <h4 className='text-white font-medium mb-3 flex items-center'>
-                      📱 Supported Links
-                    </h4>
-                    <div className='space-y-2 text-xs text-white/70'>
-                      <p>• https://www.tiktok.com/@user/video/...</p>
-                      <p>• https://vm.tiktok.com/...</p>
-                      <p>• https://vt.tiktok.com/...</p>
-                      <p>• https://twitter.com/user/status/...</p>
-                      <p>• https://x.com/user/status/...</p>
+                {/* Supported link formats */}
+                <motion.div
+                  variants={{
+                    hidden: { opacity: 0, y: 16 },
+                    show: { opacity: 1, y: 0 },
+                  }}
+                  transition={{ duration: 0.5, ease: 'easeOut' }}
+                  className='bg-white/5 rounded-xl p-5 border border-white/10'
+                >
+                  <h3 className='text-white font-semibold mb-3 text-sm md:text-base flex items-center'>
+                    🔗 Supported link formats
+                    <div className='ml-2 w-8 h-0.5 bg-gradient-to-r from-cyan-400 to-sky-500 rounded' />
+                  </h3>
+                  <ul className='grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-[11px] md:text-xs text-white/65 font-mono'>
+                    <li className='truncate'>tiktok.com/@user/video/…</li>
+                    <li className='truncate'>vm.tiktok.com/…</li>
+                    <li className='truncate'>vt.tiktok.com/…</li>
+                    <li className='truncate'>twitter.com/user/status/…</li>
+                    <li className='truncate'>x.com/user/status/…</li>
+                  </ul>
+                </motion.div>
+
+                {/* Trust strip */}
+                <motion.div
+                  variants={{
+                    hidden: { opacity: 0, y: 16 },
+                    show: { opacity: 1, y: 0 },
+                  }}
+                  transition={{ duration: 0.5, ease: 'easeOut' }}
+                  className='grid grid-cols-3 gap-2'
+                >
+                  {[
+                    { k: 'Free', v: 'forever', accent: 'text-emerald-300' },
+                    { k: 'No login', v: 'required', accent: 'text-sky-300' },
+                    { k: 'No limit', v: 'on downloads', accent: 'text-pink-300' },
+                  ].map((b) => (
+                    <div
+                      key={b.k}
+                      className='bg-white/5 rounded-lg p-3 border border-white/10 text-center'
+                    >
+                      <p className={`text-sm font-semibold ${b.accent}`}>
+                        {b.k}
+                      </p>
+                      <p className='text-white/50 text-[10px] md:text-xs mt-0.5'>
+                        {b.v}
+                      </p>
                     </div>
-                  </div>
-                  <div className='bg-white/5 rounded-xl p-4 border border-white/10'>
-                    <h4 className='text-white font-medium mb-3 flex items-center'>
-                      📊 Download Options
-                    </h4>
-                    <div className='space-y-2 text-xs text-white/70'>
-                      <p>• HD Video (no watermark)</p>
-                      <p>• MP3 Audio extraction</p>
-                      <p>• Image galleries (ZIP/Individual)</p>
-                      <p>• Preview before download</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                  ))}
+                </motion.div>
+              </motion.div>
             )}
             {state.videoMetadata && (
               <div className='p-4 bg-white/10 rounded-xl border border-white/20 space-y-4'>
@@ -711,12 +817,21 @@ export default function Home() {
                 </div>
                 {/* Preview Toggle (video only) */}
                 {state.downloadUrl && (
-                  <button
+                  <motion.button
                     onClick={togglePreview}
-                    className='w-full py-2 px-4 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center justify-center text-sm md:text-base'
+                    whileHover={{ y: -1 }}
+                    whileTap={{ scale: 0.985 }}
+                    transition={{ type: 'spring', stiffness: 280, damping: 24, mass: 0.6 }}
+                    className='group relative w-full cursor-pointer py-2.5 px-4 bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-500 bg-[length:200%_100%] bg-[position:0%_0%] hover:bg-[position:100%_0%] text-white font-semibold rounded-xl transition-[background-position,box-shadow] duration-500 ease-out flex items-center justify-center text-sm md:text-base shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-indigo-500/40 overflow-hidden'
                   >
-                    {state.showPreview ? '👁️ Hide Preview' : '👀 Show Preview'}
-                  </button>
+                    <span
+                      className='pointer-events-none absolute inset-0 -translate-x-full group-hover:translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-1000 ease-out'
+                      aria-hidden
+                    />
+                    <span className='relative'>
+                      {state.showPreview ? '👁️ Hide Preview' : '👀 Show Preview'}
+                    </span>
+                  </motion.button>
                 )}{' '}
                 {/* Video Preview */}
                 {state.showPreview && state.downloadUrl && (
@@ -777,14 +892,23 @@ export default function Home() {
                 {state.videoMetadata?.images &&
                   state.videoMetadata.images.length > 0 && (
                     <div className='space-y-3'>
-                      <button
+                      <motion.button
                         onClick={toggleImageGallery}
-                        className='w-full py-2 px-4 bg-purple-500 hover:bg-purple-600 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center justify-center text-sm md:text-base'
+                        whileHover={{ y: -1 }}
+                        whileTap={{ scale: 0.985 }}
+                        transition={{ type: 'spring', stiffness: 280, damping: 24, mass: 0.6 }}
+                        className='group relative w-full cursor-pointer py-2.5 px-4 bg-gradient-to-r from-violet-500 via-purple-500 to-fuchsia-500 bg-[length:200%_100%] bg-[position:0%_0%] hover:bg-[position:100%_0%] text-white font-semibold rounded-xl transition-[background-position,box-shadow] duration-500 ease-out flex items-center justify-center text-sm md:text-base shadow-lg shadow-purple-500/25 hover:shadow-xl hover:shadow-fuchsia-500/40 overflow-hidden'
                       >
-                        {state.showImageGallery
-                          ? '🖼️ Hide Images'
-                          : `🖼️ Show Images (${state.videoMetadata.images.length})`}
-                      </button>
+                        <span
+                          className='pointer-events-none absolute inset-0 -translate-x-full group-hover:translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-1000 ease-out'
+                          aria-hidden
+                        />
+                        <span className='relative'>
+                          {state.showImageGallery
+                            ? '🖼️ Hide Images'
+                            : `🖼️ Show Images (${state.videoMetadata.images.length})`}
+                        </span>
+                      </motion.button>
 
                       {state.showImageGallery && (
                         <div className='space-y-3'>
@@ -796,13 +920,13 @@ export default function Home() {
                             <div className='flex space-x-2'>
                               <button
                                 onClick={() => selectAllImages(true)}
-                                className='px-3 py-1 bg-green-500 hover:bg-green-600 text-white text-xs rounded'
+                                className='cursor-pointer px-3 py-1 bg-emerald-500/90 hover:bg-emerald-500 text-white text-xs font-medium rounded-md transition-colors'
                               >
                                 All
                               </button>
                               <button
                                 onClick={() => selectAllImages(false)}
-                                className='px-3 py-1 bg-red-500 hover:bg-red-600 text-white text-xs rounded'
+                                className='cursor-pointer px-3 py-1 bg-rose-500/90 hover:bg-rose-500 text-white text-xs font-medium rounded-md transition-colors'
                               >
                                 None
                               </button>
@@ -956,20 +1080,26 @@ export default function Home() {
                       }`}
                     >
                       {showVideoButton && (
-                        <button
+                        <motion.button
                           onClick={
                             state.downloadUrl
                               ? handleVideoDownload
                               : handleSlideshowRender
                           }
+                          whileHover={{ y: -1 }}
+                          whileTap={{ scale: 0.985 }}
+                          transition={{ type: 'spring', stiffness: 280, damping: 24, mass: 0.6 }}
                           disabled={
                             state.downloading || state.downloadingImages
                           }
-                          className='py-3 cursor-pointer px-4 bg-gradient-to-r from-pink-500 to-violet-500 hover:from-pink-600 hover:to-violet-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center text-sm md:text-base gap-2'
+                          className='group relative py-3 cursor-pointer px-4 bg-gradient-to-r from-pink-500 via-fuchsia-500 to-violet-500 bg-[length:200%_100%] bg-[position:0%_0%] hover:bg-[position:100%_0%] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-[background-position,box-shadow] duration-500 ease-out flex items-center justify-center text-sm md:text-base gap-2 shadow-lg shadow-pink-500/25 hover:shadow-xl hover:shadow-violet-500/40 overflow-hidden'
                         >
-                          {' '}
+                          <span
+                            className='pointer-events-none absolute inset-0 -translate-x-full group-hover:translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-1000 ease-out'
+                            aria-hidden
+                          />{' '}
                           {state.downloading ? (
-                            <>
+                            <span className='relative flex items-center gap-2'>
                               <SpinnerIcon className='flex-shrink-0 h-4 w-4 text-white' />
                               <span>
                                 {state.videoMetadata?.isPhotoCarousel &&
@@ -977,45 +1107,51 @@ export default function Home() {
                                   ? 'Rendering...'
                                   : 'Downloading...'}
                               </span>
-                            </>
+                            </span>
                           ) : (
-                            <>
+                            <span className='relative flex items-center gap-2'>
                               <DownloadIcon className='flex-shrink-0 h-5 w-5 text-white' />
                               <span>
                                 {state.videoMetadata?.isPhotoCarousel
                                   ? 'Video (slideshow)'
                                   : 'Video'}
                               </span>
-                            </>
+                            </span>
                           )}
-                        </button>
+                        </motion.button>
                       )}
 
                       {showAudioButton && (
-                        <button
+                        <motion.button
                           onClick={handleAudioDownload}
+                          whileHover={{ y: -1 }}
+                          whileTap={{ scale: 0.985 }}
+                          transition={{ type: 'spring', stiffness: 280, damping: 24, mass: 0.6 }}
                           disabled={
                             state.downloadingAudio || state.downloadingImages
                           }
-                          className='py-3 cursor-pointer px-4 bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center text-sm md:text-base gap-2'
+                          className='group relative py-3 cursor-pointer px-4 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 bg-[length:200%_100%] bg-[position:0%_0%] hover:bg-[position:100%_0%] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-[background-position,box-shadow] duration-500 ease-out flex items-center justify-center text-sm md:text-base gap-2 shadow-lg shadow-emerald-500/25 hover:shadow-xl hover:shadow-cyan-500/40 overflow-hidden'
                         >
-                          {' '}
+                          <span
+                            className='pointer-events-none absolute inset-0 -translate-x-full group-hover:translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-1000 ease-out'
+                            aria-hidden
+                          />{' '}
                           {state.downloadingAudio ? (
-                            <>
+                            <span className='relative flex items-center gap-2'>
                               <SpinnerIcon className='flex-shrink-0 h-4 w-4 text-white' />
                               <span>Downloading...</span>
-                            </>
+                            </span>
                           ) : (
-                            <>
+                            <span className='relative flex items-center gap-2'>
                               <MusicIcon className='flex-shrink-0 h-5 w-5 text-white' />
                               <span>
                                 {state.videoMetadata?.isPhotoCarousel
                                   ? 'Download Audio'
                                   : 'Extract Audio'}
                               </span>
-                            </>
+                            </span>
                           )}
-                        </button>
+                        </motion.button>
                       )}
                     </div>
                   )
@@ -1075,9 +1211,13 @@ export default function Home() {
           </div>
         </div>
         {/* SEO Content: how-to + FAQ (mirrors JSON-LD FAQ schema) */}
-        <section
+        <motion.section
           aria-labelledby='seo-heading'
           className='mt-10 space-y-6 text-white/80'
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: '-80px' }}
+          transition={{ duration: 0.7, ease: 'easeOut' }}
         >
           <div>
             <h2
@@ -1095,36 +1235,45 @@ export default function Home() {
             </p>
           </div>
 
-          <div className='grid md:grid-cols-3 gap-4'>
-            <article className='bg-white/5 rounded-xl p-4 border border-white/10'>
-              <h3 className='text-white font-semibold mb-2'>🎬 Videos in HD</h3>
-              <p className='text-sm'>
-                Watermark-free TikTok downloads and native Twitter/X video rips,
-                served with proper range requests so preview and seeking work
-                flawlessly.
-              </p>
-            </article>
-            <article className='bg-white/5 rounded-xl p-4 border border-white/10'>
-              <h3 className='text-white font-semibold mb-2'>
-                🎵 MP3 audio extraction
-              </h3>
-              <p className='text-sm'>
-                Pull the soundtrack from any TikTok video or slideshow. Photo
-                carousels keep the original background music — perfect for
-                trending sounds.
-              </p>
-            </article>
-            <article className='bg-white/5 rounded-xl p-4 border border-white/10'>
-              <h3 className='text-white font-semibold mb-2'>
-                🖼️ Photo carousels
-              </h3>
-              <p className='text-sm'>
-                TikTok slideshows come through as a full-resolution gallery.
-                Preview, pick favorites, then save individually or as a single
-                ZIP.
-              </p>
-            </article>
-          </div>
+          <motion.div
+            className='grid md:grid-cols-3 gap-4'
+            initial='hidden'
+            whileInView='show'
+            viewport={{ once: true, margin: '-60px' }}
+            variants={{
+              hidden: {},
+              show: { transition: { staggerChildren: 0.12 } },
+            }}
+          >
+            {[
+              {
+                title: '🎬 Videos in HD',
+                body: 'Watermark-free TikTok downloads and native Twitter/X video rips, served with proper range requests so preview and seeking work flawlessly.',
+              },
+              {
+                title: '🎵 MP3 audio extraction',
+                body: 'Pull the soundtrack from any TikTok video or slideshow. Photo carousels keep the original background music — perfect for trending sounds.',
+              },
+              {
+                title: '🖼️ Photo carousels',
+                body: 'TikTok slideshows come through as a full-resolution gallery. Preview, pick favorites, then save individually or as a single ZIP.',
+              },
+            ].map((card) => (
+              <motion.article
+                key={card.title}
+                variants={{
+                  hidden: { opacity: 0, y: 24 },
+                  show: { opacity: 1, y: 0 },
+                }}
+                transition={{ duration: 0.5, ease: 'easeOut' }}
+                whileHover={{ y: -4, scale: 1.02 }}
+                className='bg-white/5 rounded-xl p-4 border border-white/10 hover:border-white/30 transition-colors'
+              >
+                <h3 className='text-white font-semibold mb-2'>{card.title}</h3>
+                <p className='text-sm'>{card.body}</p>
+              </motion.article>
+            ))}
+          </motion.div>
 
           <div>
             <h2 className='text-xl md:text-2xl font-bold text-white mb-3'>
@@ -1174,10 +1323,8 @@ export default function Home() {
               </AccordionItem>
             </Accordion>
           </div>
-        </section>
-        {/* Ad Banner - Bottom of Page */}
-        {/* <AdBanner slot='0987654321' format='auto' className='mt-6' /> */}
-      </div>
+        </motion.section>
+      </motion.div>
 
       {lightboxIndex !== null && state.videoMetadata?.images && (
         <ImageLightbox
