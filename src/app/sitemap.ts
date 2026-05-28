@@ -9,6 +9,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
       lastModified: now,
       changeFrequency: 'weekly',
       priority: 1,
+      alternates: {
+        languages: {
+          en: siteConfig.url,
+          'x-default': siteConfig.url,
+        },
+      },
+      images: [`${siteConfig.url}/opengraph-image`],
     },
   ]
 }

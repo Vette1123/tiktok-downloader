@@ -4,15 +4,20 @@ import Script from 'next/script'
 import './globals.css'
 import { Analytics } from '@vercel/analytics/next'
 import { siteConfig } from '@/config/site'
+import { structuredData } from '@/lib/structuredData'
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
   subsets: ['latin'],
+  display: 'swap',
+  preload: true,
 })
 
 const geistMono = Geist_Mono({
   variable: '--font-geist-mono',
   subsets: ['latin'],
+  display: 'swap',
+  preload: false,
 })
 
 const title = `${siteConfig.name} — ${siteConfig.tagline}`
@@ -45,20 +50,16 @@ export const metadata: Metadata = {
   },
   alternates: {
     canonical: '/',
+    languages: {
+      en: '/',
+      'x-default': '/',
+    },
   },
   openGraph: {
     title,
     description: siteConfig.description,
     url: siteConfig.url,
     siteName: siteConfig.name,
-    images: [
-      {
-        url: siteConfig.ogImage,
-        width: 1200,
-        height: 630,
-        alt: siteConfig.name,
-      },
-    ],
     locale: 'en_US',
     type: 'website',
   },
@@ -68,12 +69,6 @@ export const metadata: Metadata = {
     description: siteConfig.description,
     creator: siteConfig.twitterTag,
     site: siteConfig.twitterTag,
-    images: [
-      {
-        url: siteConfig.ogImage,
-        alt: siteConfig.name,
-      },
-    ],
   },
   robots: {
     index: true,
@@ -97,110 +92,32 @@ export const metadata: Metadata = {
   manifest: '/manifest.json',
 }
 
-const structuredData = {
-  '@context': 'https://schema.org',
-  '@graph': [
-    {
-      '@type': 'WebApplication',
-      '@id': `${siteConfig.url}/#webapp`,
-      name: siteConfig.name,
-      url: siteConfig.url,
-      description: siteConfig.description,
-      applicationCategory: 'MultimediaApplication',
-      operatingSystem: 'Any',
-      browserRequirements: 'Requires JavaScript. Requires HTML5.',
-      isAccessibleForFree: true,
-      inLanguage: 'en',
-      offers: {
-        '@type': 'Offer',
-        price: '0',
-        priceCurrency: 'USD',
-      },
-      featureList: [
-        'Download TikTok videos without watermark',
-        'Download Twitter/X videos in HD',
-        'Extract MP3 audio from TikTok videos',
-        'Download TikTok slideshows (photo carousels) with original music',
-        'Preview video and images before downloading',
-        'Save images individually or as a ZIP archive',
-      ],
-      screenshot: siteConfig.ogImage,
-      author: {
-        '@type': 'Person',
-        name: siteConfig.author.name,
-        url: siteConfig.author.url,
-      },
-      aggregateRating: {
-        '@type': 'AggregateRating',
-        ratingValue: '4.9',
-        ratingCount: '128',
-        bestRating: '5',
-        worstRating: '1',
-      },
-    },
-    {
-      '@type': 'FAQPage',
-      '@id': `${siteConfig.url}/#faq`,
-      mainEntity: [
-        {
-          '@type': 'Question',
-          name: 'Is this TikTok downloader free?',
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: 'Yes. The tool is free, requires no sign-up, and has no daily download limit.',
-          },
-        },
-        {
-          '@type': 'Question',
-          name: 'Do downloaded TikTok videos have a watermark?',
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: 'No. Videos are saved in HD quality without the TikTok watermark.',
-          },
-        },
-        {
-          '@type': 'Question',
-          name: 'Can I download a TikTok photo carousel (slideshow)?',
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: 'Yes. Paste the slideshow URL and the app shows every image plus the original background music — download them individually, as a ZIP, or save the audio as an MP3.',
-          },
-        },
-        {
-          '@type': 'Question',
-          name: 'Does it support Twitter/X videos?',
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: 'Yes. Paste any twitter.com or x.com status URL and the tool will extract the video for preview and download.',
-          },
-        },
-      ],
-    },
-  ],
-}
-
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
   return (
-    <html lang='en'>
+    <html lang='en' dir='ltr'>
       <head>
         <link rel='icon' href='/favicon.svg' type='image/svg+xml' />
         <link rel='icon' href='/favicon.ico' sizes='32x32' />
         <link rel='apple-touch-icon' href='/apple-touch-icon.svg' />
         <link rel='manifest' href='/manifest.json' />
+        <link
+          rel='preconnect'
+          href='https://pagead2.googlesyndication.com'
+          crossOrigin='anonymous'
+        />
+        <link rel='dns-prefetch' href='https://pagead2.googlesyndication.com' />
         <meta name='msapplication-TileColor' content='#7c3aed' />
         <meta name='google-adsense-account' content='ca-pub-3842960431278714' />
         <meta
           name='google-site-verification'
           content='aha64Aa3HDSFKw-xDlfpIGcBkGRU4lRV9xU-qR2SPwc'
         />
-        <Script
-          id='ld-json'
+        <script
           type='application/ld+json'
-          strategy='beforeInteractive'
           dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
         />
       </head>

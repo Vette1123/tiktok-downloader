@@ -1,22 +1,30 @@
 {
+  "id": "/",
   "name": "Social Media Downloader",
-  "short_name": "SM Downloader",
-  "description": "Download videos without watermarks from TikTok, Twitter/X, Instagram, and Facebook",
+  "short_name": "Social Downloader",
+  "description": "Download TikTok and Twitter/X videos without watermarks, extract MP3 audio, and save TikTok photo carousels — free, no sign-up, in your browser.",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["utilities", "multimedia", "productivity"],
   "icons": [
     {
       "src": "/favicon.svg",
       "sizes": "any",
-      "type": "image/svg+xml"
+      "type": "image/svg+xml",
+      "purpose": "any"
     },
     {
       "src": "/apple-touch-icon.svg",
       "sizes": "180x180",
-      "type": "image/svg+xml"
+      "type": "image/svg+xml",
+      "purpose": "maskable"
     }
   ],
   "theme_color": "#7c3aed",
   "background_color": "#1e1b4b",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
   "start_url": "/",
-  "orientation": "portrait"
+  "scope": "/",
+  "orientation": "any"
 }
