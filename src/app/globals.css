@@ -1,5 +1,18 @@
 @import 'tailwindcss';
 
+html,
+body {
+  background-color: #1e1b4b;
+  background-image: linear-gradient(
+    to bottom right,
+    #4c1d95,
+    #1e3a8a,
+    #312e81
+  );
+  background-attachment: fixed;
+  min-height: 100%;
+}
+
 @theme {
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
@@ -30,4 +43,63 @@
   line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+@keyframes blob-drift-1 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(60px, 40px) scale(1.1);
+  }
+  66% {
+    transform: translate(-20px, -30px) scale(0.95);
+  }
+}
+
+@keyframes blob-drift-2 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(-50px, -40px) scale(1.08);
+  }
+  66% {
+    transform: translate(30px, 20px) scale(0.97);
+  }
+}
+
+@keyframes blob-pulse {
+  0%,
+  100% {
+    transform: translateX(-50%) scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translateX(-50%) scale(1.15);
+    opacity: 0.8;
+  }
+}
+
+.blob-1 {
+  animation: blob-drift-1 18s ease-in-out infinite;
+  will-change: transform;
+}
+.blob-2 {
+  animation: blob-drift-2 22s ease-in-out infinite;
+  will-change: transform;
+}
+.blob-3 {
+  animation: blob-pulse 12s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blob-1,
+  .blob-2,
+  .blob-3 {
+    animation: none;
+  }
 }

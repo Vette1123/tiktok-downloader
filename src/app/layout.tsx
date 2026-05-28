@@ -144,6 +144,11 @@ export default function RootLayout({
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        style={{
+          backgroundColor: '#1e1b4b',
+          backgroundImage:
+            'linear-gradient(to bottom right, #4c1d95, #1e3a8a, #312e81)',
+        }}
       >
         <Script
           async
