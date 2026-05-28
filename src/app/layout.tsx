@@ -76,6 +76,10 @@ export const metadata: Metadata = {
       },
     ],
   },
+  other: {
+    'og:see_also': siteConfig.author.url,
+    'article:author': siteConfig.author.url,
+  },
   twitter: {
     card: 'summary_large_image',
     title,
