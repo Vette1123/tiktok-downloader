@@ -10,9 +10,30 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ['/api/'],
       },
       {
-        userAgent: ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'PerplexityBot', 'Google-Extended', 'ClaudeBot', 'anthropic-ai'],
+        userAgent: [
+          // Search-aware AI crawlers (allow — drives discovery)
+          'GPTBot',
+          'OAI-SearchBot',
+          'ChatGPT-User',
+          'PerplexityBot',
+          'Perplexity-User',
+          'Google-Extended',
+          'ClaudeBot',
+          'Claude-Web',
+          'anthropic-ai',
+          'Applebot',
+          'Applebot-Extended',
+          'Bingbot',
+          'DuckDuckBot',
+          'YandexBot',
+        ],
         allow: '/',
         disallow: ['/api/'],
+      },
+      {
+        // Aggressive scrapers — block
+        userAgent: ['CCBot', 'Bytespider', 'Amazonbot', 'Diffbot', 'Omgili'],
+        disallow: '/',
       },
     ],
     sitemap: `${siteConfig.url}/sitemap.xml`,

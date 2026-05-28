@@ -20,11 +20,37 @@
       "purpose": "maskable"
     }
   ],
+  "screenshots": [
+    {
+      "src": "/opengraph-image",
+      "sizes": "1200x630",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Paste a TikTok or Twitter/X link to download video, audio, or slideshow images."
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Download TikTok video",
+      "short_name": "TikTok",
+      "description": "Paste a TikTok URL to save the video without a watermark.",
+      "url": "/?source=pwa-shortcut-tiktok",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Download Twitter/X video",
+      "short_name": "Twitter",
+      "description": "Paste a twitter.com or x.com URL to save the video in HD.",
+      "url": "/?source=pwa-shortcut-twitter",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    }
+  ],
   "theme_color": "#7c3aed",
   "background_color": "#1e1b4b",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui", "browser"],
   "start_url": "/",
   "scope": "/",
-  "orientation": "any"
+  "orientation": "any",
+  "prefer_related_applications": false
 }

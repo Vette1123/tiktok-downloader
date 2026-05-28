@@ -23,11 +23,15 @@ const geistMono = Geist_Mono({
 const title = `${siteConfig.name} — ${siteConfig.tagline}`
 
 export const viewport: Viewport = {
-  themeColor: '#7c3aed',
-  colorScheme: 'dark',
+  themeColor: [
+    { media: '(prefers-color-scheme: dark)', color: '#1e1b4b' },
+    { media: '(prefers-color-scheme: light)', color: '#7c3aed' },
+  ],
+  colorScheme: 'dark light',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 5,
+  viewportFit: 'cover',
 }
 
 export const metadata: Metadata = {
@@ -60,8 +64,17 @@ export const metadata: Metadata = {
     description: siteConfig.description,
     url: siteConfig.url,
     siteName: siteConfig.name,
-    locale: 'en_US',
+    locale: siteConfig.locale,
     type: 'website',
+    images: [
+      {
+        url: '/opengraph-image',
+        width: 1200,
+        height: 630,
+        alt: siteConfig.ogImageAlt,
+        type: 'image/png',
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
@@ -69,6 +82,14 @@ export const metadata: Metadata = {
     description: siteConfig.description,
     creator: siteConfig.twitterTag,
     site: siteConfig.twitterTag,
+    images: [
+      {
+        url: '/twitter-image',
+        alt: siteConfig.ogImageAlt,
+        width: 1200,
+        height: 630,
+      },
+    ],
   },
   robots: {
     index: true,
