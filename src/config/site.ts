@@ -1,11 +1,11 @@
 export type SiteConfig = typeof siteConfig
 
 const siteUrl =
-  process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.mohamedgado.site'
+  process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.mohamedgado.com'
 
 export const siteConfig = {
   name: 'Social Media Downloader',
-  shortName: 'SM Downloader',
+  shortName: 'Social Downloader',
   tagline: 'Download TikTok & Twitter/X videos without watermarks',
   description:
     'Free, fast, and watermark-free downloader for TikTok and Twitter/X. Save HD videos, extract MP3 audio, and download TikTok photo carousels (slideshows) with the original soundtrack — no login or install required.',
@@ -21,7 +21,6 @@ export const siteConfig = {
     github: 'https://github.com/Vette1123/tiktok-downloader',
     portfolio: 'https://www.mohamedgado.com',
   },
-  ogImage: `${siteUrl}/og.jpg`,
   twitterTag: '@Sadge1996',
   keywords: [
     'TikTok downloader',
