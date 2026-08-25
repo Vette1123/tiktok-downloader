@@ -1756,7 +1756,10 @@ export class Downloader {
    *   1. Instagram's public embed page
    *   2. Instagram's media API, only for an explicitly credentialed request
    *   3. The configured IF-PHP aggregate endpoint
-   *   4. Cobalt community instances
+   *
+   * This fork deliberately does not send Instagram links to public Cobalt
+   * instances. Self-hosting the Worker should not silently turn a supposedly
+   * private route into a dependency on an unrelated community service.
    *
    * Instagram posts are mapped onto the same VideoData shape as everything
    * else: a single primary video goes in `downloadUrl`, while photos (and the
@@ -1802,14 +1805,10 @@ export class Downloader {
     //      account is only used when actually needed.
     //   3. IF-PHP aggregate API — operator-keyed public resolver. It is tried
     //      before anonymous community services when IFPHP_API_KEY is configured.
-    //   4. Cobalt — the datacenter-reachable fallback, and the one that answers
-    //      when the embed shell comes back. Instagram's own signed
-    //      video CDN URLs are frequently refused with an
-    //      HTTP 500/403 when re-fetched from a datacenter IP (e.g. Vercel), even
-    //      though extraction succeeded — so the /api/video proxy can't stream
-    //      them and the player is dead. Cobalt re-extracts the clip and hands
-    //      back a URL that DOES stream from any IP, so it's the rescue path when
-    //      the primary stream is unreachable here.
+    // Public Cobalt is intentionally excluded from Instagram. The Worker first
+    // uses its own Instagram extractor, then the operator-configured IF-PHP
+    // endpoint. If both fail, report that result instead of silently sending the
+    // link to an unstable community resolver.
     const methods: Array<() => Promise<VideoData | null>> = [
       () =>
         shortcode
@@ -1820,11 +1819,6 @@ export class Downloader {
           ? this.tryInstagramMediaInfo(shortcode, url)
           : Promise.resolve(null),
       () => resolveIfphpMedia(resolvedUrl, 'instagram'),
-      // This endpoint was verified by the fork owner for public Instagram
-      // reels. Prefer it only for Instagram; it remains last for other sites
-      // because its availability is intermittent.
-      () =>
-        this.tryCobaltInstances(resolvedUrl, 'https://api.co.rooot.gay/'),
     ]
 
     // Hold the first video result whose stream we couldn't confirm reachable, so
@@ -2304,10 +2298,7 @@ export class Downloader {
   }
 
   // Try every cobalt instance in order.
-  private async tryCobaltInstances(
-    url: string,
-    preferredInstance?: string,
-  ): Promise<VideoData | null> {
+  private async tryCobaltInstances(url: string): Promise<VideoData | null> {
     const errors: string[] = []
     // A self-hosted resolver that self-registers its (possibly rotating) URL is
     // discovered at request time and appended after the static list — so it's
@@ -2317,17 +2308,10 @@ export class Downloader {
     const configured = new Set(
       this.cobaltInstances.map((i) => i.replace(/\/$/, '')),
     )
-    const available =
+    const instances =
       discovered && !configured.has(discovered.replace(/\/$/, ''))
         ? [...this.cobaltInstances, discovered]
         : this.cobaltInstances
-    const preferred = preferredInstance?.replace(/\/$/, '')
-    const instances = preferred
-      ? [
-          ...available.filter((item) => item.replace(/\/$/, '') === preferred),
-          ...available.filter((item) => item.replace(/\/$/, '') !== preferred),
-        ]
-      : available
     // Prefer an instance that *tunnels* over one that hands back a raw CDN
     // redirect. Both are usable, but only a tunnel streams from any IP with
     // Content-Disposition set, which lets the browser pull the file straight
