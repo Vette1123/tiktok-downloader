@@ -11,8 +11,6 @@ export type ChinesePlatform = Extract<
   'douyin' | 'kuaishou' | 'bilibili' | 'xiaohongshu'
 >
 
-export type IfphpPlatform = ChinesePlatform | 'instagram'
-
 const MOBILE_AGENT =
   'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Mobile Safari/537.36'
 
@@ -319,7 +317,7 @@ function jsonObjectAfter(html: string, marker: string): unknown | null {
 export function parseIfphpPayload(
   payload: unknown,
   sourceUrl: string,
-  platform: IfphpPlatform,
+  platform: ChinesePlatform,
 ): VideoData | null {
   if (!payload || typeof payload !== 'object') return null
   const code = (payload as Record<string, unknown>).code
@@ -339,18 +337,16 @@ export function parseIfphpPayload(
     video: platform === 'xiaohongshu' && media.images.length ? undefined : video,
     thumbnail: stringAtPath(payload, ['cover', 'thumbnail', 'pic']),
     images: media.images,
-    staticGallery:
-      (platform === 'xiaohongshu' && media.images.length > 0) ||
-      (platform === 'instagram' && !video && media.images.length > 0),
+    staticGallery: platform === 'xiaohongshu' && media.images.length > 0,
   })
   return platform === 'xiaohongshu' && parsed
     ? preferXiaohongshuImages(parsed)
     : parsed
 }
 
-export async function resolveIfphpMedia(
+async function resolveIfphp(
   sourceUrl: string,
-  platform: IfphpPlatform,
+  platform: ChinesePlatform,
 ): Promise<VideoData | null> {
   const key = process.env.IFPHP_API_KEY?.trim()
   if (!key) return null
@@ -397,7 +393,7 @@ async function resolveDouyin(sourceUrl: string): Promise<VideoData | null> {
     // The current Douyin share page commonly exposes only the item id to
     // datacenter traffic. The keyed API fallback below handles that case.
   }
-  return resolveIfphpMedia(sourceUrl, 'douyin')
+  return resolveIfphp(sourceUrl, 'douyin')
 }
 
 async function resolveKuaishou(
@@ -413,7 +409,7 @@ async function resolveKuaishou(
   } catch {
     // Continue with the configured API fallback.
   }
-  return resolveIfphpMedia(sourceUrl, 'kuaishou')
+  return resolveIfphp(sourceUrl, 'kuaishou')
 }
 
 async function resolveXiaohongshu(sourceUrl: string): Promise<VideoData | null> {
@@ -424,7 +420,7 @@ async function resolveXiaohongshu(sourceUrl: string): Promise<VideoData | null> 
       const state =
         jsonObjectAfter(html, 'window.__INITIAL_STATE__') ||
         jsonObjectAfter(html, '__INITIAL_STATE__')
-      if (!state) return resolveIfphpMedia(sourceUrl, 'xiaohongshu')
+      if (!state) return resolveIfphp(sourceUrl, 'xiaohongshu')
       const media = mediaFromObject(state)
       const noteId = page.url.match(/\/(?:discovery\/item|explore)\/([\w-]+)/)?.[1]
       const parsed = result({
@@ -444,7 +440,7 @@ async function resolveXiaohongshu(sourceUrl: string): Promise<VideoData | null> 
   } catch {
     // Continue with the configured API fallback.
   }
-  return resolveIfphpMedia(sourceUrl, 'xiaohongshu')
+  return resolveIfphp(sourceUrl, 'xiaohongshu')
 }
 
 export async function resolveChinesePlatform(
