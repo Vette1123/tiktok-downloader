@@ -33,14 +33,14 @@ import { join } from 'node:path'
 import vm from 'node:vm'
 
 /**
- * 225 KiB against 214.7 KiB shipped by the Chinese-platform build.
+ * 230 KiB against 228.2 KiB shipped by the private-access build.
  *
- * The four dependency-free platform adapters add about 15 KiB and measured
- * 4.22 ms total startup in CI (2026-08-25), still comfortably inside the free
- * plan's 10 ms request CPU budget. The small remaining margin continues to
- * catch an accidental dependency or a large parser table.
+ * The signed web session, protected Shortcuts API and request throttles add no
+ * dependencies and measured 4.75 ms total startup in CI (2026-08-25), still
+ * comfortably inside the free plan's 10 ms request CPU budget. The remaining
+ * margin continues to catch an accidental dependency or a large parser table.
  */
-const MAX_BUNDLE_BYTES = 225 * 1024
+const MAX_BUNDLE_BYTES = 230 * 1024
 
 /** wrangler rejects the upload past this on the free plan. */
 const MAX_GZIPPED_BYTES = 3 * 1024 * 1024
