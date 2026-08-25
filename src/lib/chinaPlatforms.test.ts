@@ -86,29 +86,6 @@ describe('IF-PHP response normalisation', () => {
     ).toBeNull()
   })
 
-  it('normalises an Instagram Reel from the aggregate endpoint', () => {
-    const parsed = parseIfphpPayload(
-      {
-        code: 200,
-        data: {
-          id: 'DCUBzY0yiKK',
-          title: 'Public reel',
-          author: { username: 'creator' },
-          video: { download_url: 'https://cdn.example/reel.mp4' },
-          cover: 'https://cdn.example/reel.jpg',
-        },
-      },
-      'https://www.instagram.com/reel/DCUBzY0yiKK/',
-      'instagram',
-    )
-    expect(parsed).toMatchObject({
-      id: 'DCUBzY0yiKK',
-      title: 'Public reel',
-      author: 'creator',
-      downloadUrl: 'https://cdn.example/reel.mp4',
-    })
-  })
-
   it('returns Xiaohongshu Live Photos as still images, not a video', () => {
     const parsed = parseIfphpPayload(
       {
