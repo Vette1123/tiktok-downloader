@@ -243,7 +243,7 @@ function isXiaohongshuImagePost(value: unknown): boolean {
   if (!value || typeof value !== 'object') return false
 
   const seen = new Set<unknown>()
-  const walk = (current: unknown, keyPath = ''): boolean => {
+  const walk = (current: unknown): boolean => {
     if (seen.has(current)) return false
     if (current && typeof current === 'object') seen.add(current)
 
@@ -277,13 +277,13 @@ function isXiaohongshuImagePost(value: unknown): boolean {
         ) {
           return true
         }
-        if (walk(child, keyPath ? `${keyPath}.${key}` : key)) return true
+        if (walk(child)) return true
       }
       return false
     }
 
     if (Array.isArray(current)) {
-      return current.some((item, index) => walk(item, `${keyPath}.${index}`))
+      return current.some((item) => walk(item))
     }
     return false
   }
