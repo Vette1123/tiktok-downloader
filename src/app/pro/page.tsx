@@ -10,7 +10,7 @@ import { SUPPORT_LIFETIME, SUPPORT_MEMBERSHIP, SUPPORT_PRICES } from '@/config/s
 export const metadata: Metadata = {
   title: 'Support this project',
   description:
-    'This downloader is free and stays free. Support it for $5 a month or $99 once — supporters get the batch queue, ZIP bundling, priority resolve and an ad-free site, switched on automatically.',
+    'This downloader is free and stays free. Support it for $5 a month or $99 once — supporters get the batch queue, playlist import, subtitle downloads, ZIP bundling, priority resolve and an ad-free site, switched on automatically.',
   alternates: { canonical: '/pro' },
 }
 
@@ -50,7 +50,7 @@ export default function Support() {
           <p className='mx-auto mt-3 max-w-xl text-sm text-white/70 md:text-base'>
             Every download on this site is free, with no account and no limits,
             and that is not changing. A membership covers a slice of what it
-            costs to keep the resolvers up — and switches on four things that
+            costs to keep the resolvers up — and switches on a few things that
             save you standing over them.
           </p>
         </div>
@@ -137,9 +137,17 @@ export default function Support() {
 
             <ul className='mt-5 grid gap-3 sm:grid-cols-2'>
               {PRO_BENEFITS.map((benefit) => (
-                <li key={benefit} className='flex items-start gap-3'>
-                  <CheckIcon className='mt-0.5 h-4 w-4 shrink-0 text-cyan-300' aria-hidden />
-                  <span className='text-sm text-white/75'>{benefit}</span>
+                <li
+                  key={benefit.title}
+                  className='rounded-xl border border-white/[0.08] bg-white/[0.03] p-4'
+                >
+                  <div className='flex items-start gap-2.5'>
+                    <CheckIcon className='mt-0.5 h-4 w-4 shrink-0 text-cyan-300' aria-hidden />
+                    <div>
+                      <p className='text-sm font-semibold text-white'>{benefit.title}</p>
+                      <p className='mt-1 text-sm leading-relaxed text-white/60'>{benefit.body}</p>
+                    </div>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -161,12 +169,13 @@ export default function Support() {
           </div>
 
           <p className='mt-6 text-sm text-white/60'>
-            The four above are about doing the same work without standing over it — a
-            queue instead of one link at a time, one ZIP instead of twelve
-            files. None of them reach anything a visitor without them cannot
-            already download, and none of them involve this site signing in
-            anywhere on your behalf. Everything free today stays free whether
-            anyone supports this or not.
+            Every one above is about doing the same work without standing over
+            it — a queue instead of one link at a time, one ZIP instead of
+            twelve files, a playlist instead of twenty pastes. None of them
+            reach anything a visitor without them cannot already download, and
+            none of them involve this site signing in anywhere on your behalf.
+            Everything free today stays free whether anyone supports this or
+            not.
           </p>
         </Surface>
 

@@ -13,8 +13,8 @@ import {
 import { Surface } from '@/components/Surface'
 import {
   appReducer,
-  type AppState,
   initialState,
+  isResolvingOrDownloading,
   isSuccessMessage,
   type VideoMetadata,
 } from '@/lib/appReducer'
@@ -45,18 +45,43 @@ import { recordResolve } from '@/lib/proSignals'
 import { nowMs, useIsIOSLike } from '@/lib/clientEnv'
 import { setFormat, setQuality, usePrefs } from '@/lib/prefs'
 import { buildDownloadFilename } from '@/lib/filename'
+import { parseYouTubeId } from '@/lib/validator'
+import { SubtitlePicker } from '@/components/SubtitlePicker'
+import { ThumbnailButton } from '@/components/ThumbnailButton'
+import { ShareButton } from '@/components/ShareButton'
+import { CopyLinkButton } from '@/components/CopyLinkButton'
 import { friendlyError } from '@/lib/errorMessages'
+import { useT } from '@/lib/i18nStore'
+import {
+  clearPlatformQuality,
+  effectiveQuality,
+  getStoredQualityMap,
+  rememberPlatformQuality,
+  removeQuality,
+  type QualityMap,
+} from '@/lib/platformQuality'
+import { detectPlatform, type SupportedPlatform } from '@/lib/validator'
 import { resolve } from '@/lib/resolve'
+import {
+  describeProgress,
+  getProgressServerSnapshot,
+  getProgressSnapshot,
+  reportProgress,
+  subscribeProgress,
+} from '@/lib/downloadProgress'
 import { useProToken } from '@/lib/entitlements'
 import {
   addHistory,
   clearHistory,
+  exportHistory,
   getHistorySnapshot,
   getHistoryServerSnapshot,
+  importHistory,
   removeHistory,
   subscribeHistory,
   type HistoryEntry,
 } from '@/lib/history'
+import { saveBlob } from '@/lib/blobSaver'
 
 // Pull the first http(s) URL out of arbitrary shared text. Android's share sheet
 // often hands a link inside `text` wrapped in a caption ("check this out <url>"),
@@ -142,21 +167,28 @@ async function streamToBlob(
   const startedAt = nowMs()
   let received = 0
   onProgress(0)
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    if (value) {
-      chunks.push(value)
-      received += value.length
-      onProgress(Math.min(99, Math.round((received / total) * 100)))
-      if (bail?.(received, total, nowMs() - startedAt)) {
-        await reader.cancel().catch(() => {})
-        throw new StreamBailout()
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value) {
+        chunks.push(value)
+        received += value.length
+        onProgress(Math.min(99, Math.round((received / total) * 100)))
+        // The MB/rate readout rides a module store rather than the reducer —
+        // see lib/downloadProgress. Cleared in finally, never throttled there.
+        reportProgress({ received, total, startedAt })
+        if (bail?.(received, total, nowMs() - startedAt)) {
+          await reader.cancel().catch(() => {})
+          throw new StreamBailout()
+        }
       }
     }
+    onProgress(100)
+    return new Blob(chunks, type ? { type } : undefined)
+  } finally {
+    reportProgress(null)
   }
-  onProgress(100)
-  return new Blob(chunks, type ? { type } : undefined)
 }
 
 /** Thrown by `streamToBlob` when its `bail` predicate asks it to stop. */
@@ -176,19 +208,9 @@ function isTooSlowToStream(
   return projectedMs > MAX_STREAM_SECONDS * 1000
 }
 
-// True while a link is being resolved or a file is actively transferring —
-// `state.loading` covers only the former; the latter is three independent
-// flags because video/audio/images can each be mid-transfer on their own.
-// The promo slot (and anything else that must stay off-screen for the whole
-// paste-to-download path) gates on this rather than inlining the four terms.
-function isResolvingOrDownloading(state: AppState): boolean {
-  return (
-    state.loading ||
-    state.downloading ||
-    state.downloadingAudio ||
-    state.downloadingImages
-  )
-}
+// isResolvingOrDownloading now lives in lib/appReducer, beside
+// isSuccessMessage — the banner's retry offer needs the same predicate the
+// promo slot does, and one copy keeps them from drifting apart.
 
 // Capture a tiny, self-contained snapshot of a thumbnail for the Recent list.
 // Loads the image through our same-origin /api/image proxy (which sets CORS +
@@ -302,18 +324,8 @@ function downloadManagerUrl(
   return null
 }
 
-// Save an already-fetched body under our own filename. Same-origin blob URLs
-// honour the `download` attribute, which a cross-origin URL never does.
-function saveBlob(blob: Blob, filename: string) {
-  const blobUrl = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = blobUrl
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-  URL.revokeObjectURL(blobUrl)
-}
+// Save an already-fetched body under our own filename: shared helper
+// (src/lib/blobSaver.ts), same technique this file used to hand-roll.
 
 // Pull a tunnel download through fetch() so we can report real progress, then
 // save it. The bytes still go browser→instance directly — the point of the
@@ -357,6 +369,43 @@ async function downloadDirectWithProgress(
   }
 }
 
+/**
+ * The text under the progress bar: percentage from the reducer, bytes and
+ * rate from the progress store. Two sources on one line because they move at
+ * different rates — the percentage is throttled by chunk cadence, the store
+ * by its own clock — and neither is derived from the other.
+ */
+function ProgressLine({ pct }: { pct: number | null }) {
+  const detail = useSyncExternalStore(
+    subscribeProgress,
+    getProgressSnapshot,
+    getProgressServerSnapshot,
+  )
+  const t = useT()
+  const readout = describeProgress(detail)
+  return (
+    <p className='text-center text-xs text-white/50'>
+      {pct === null
+        ? t('preparingDownload')
+        : t('progressLine', { pct }) + (readout ? ` · ${readout}` : '')}
+    </p>
+  )
+}
+
+/**
+ * The status banner's text. Messages dispatched inside this component were
+ * already localized at their call sites; the reducer sets one English
+ * constant of its own ('Content processed successfully!'), which is mapped
+ * here rather than by threading a locale through the pure reducer.
+ */
+function displayMessage(
+  t: (key: Parameters<ReturnType<typeof useT>>[0]) => string,
+  message: string,
+): string {
+  if (message === 'Content processed successfully!') return t('msgProcessed')
+  return message
+}
+
 const PLATFORM_DISPLAY: Record<string, string> = {
   tiktok: 'TikTok',
   twitter: 'X',
@@ -369,6 +418,9 @@ const PLATFORM_DISPLAY: Record<string, string> = {
   snapchat: 'Snapchat',
   twitch: 'Twitch',
   vimeo: 'Vimeo',
+  // Any other host. Recent titles read "Web video" rather than falling back to
+  // "Saved link", so the list stays content-shaped for long-tail saves too.
+  generic: 'Web',
 }
 
 // Never store a raw URL or "Untitled" as a Recent title — fall back to a clean
@@ -489,6 +541,27 @@ export function DownloaderApp() {
   // batch runner uses, so "two links" here means exactly what it will mean when
   // Download is pressed — and memoised because this runs on every keystroke.
   const pastedLinks = useMemo(() => parseBatchInput(state.url).length, [state.url])
+
+  const [historyQuery, setHistoryQuery] = useState('')
+  // Recent search filter. Client-side over at most 30 rows; empty query means
+  // "everything", so the ordinary Recent flow is untouched.
+  const filteredHistory = useMemo(() => {
+    const q = historyQuery.trim().toLowerCase()
+    if (!q) return history
+    return history.filter((h) =>
+      [h.title, h.url, h.author].some((v) => (v ?? '').toLowerCase().includes(q)),
+    )
+  }, [history, historyQuery])
+  // What the list actually renders. Collapsed shows the five most recent;
+  // "View all" and any active filter both show the filtered set — a filter
+  // that only searched the visible five would be a filter in name only.
+  const visibleHistory = useMemo(
+    () =>
+      showAllHistory || historyQuery.trim()
+        ? filteredHistory
+        : history.slice(0, 5),
+    [filteredHistory, history, historyQuery, showAllHistory],
+  )
   // iPhone/iPad Safari: downloads land in Files, not the camera roll, so we show
   // a one-line "save to Photos" hint on video results. Set once on mount.
   // Read straight from the browser rather than via an effect — see lib/clientEnv.
@@ -497,6 +570,15 @@ export function DownloaderApp() {
   // Pro token, sent as X-Pro-Token so the server tries the operator's own
   // resolvers first for a subscriber's request — see lib/entitlements.
   const proToken = useProToken()
+  // Core-flow copy follows the chosen language (footer picker); deep copy —
+  // hints, FAQ, legal — stays English by design. See lib/i18n.ts.
+  const t = useT()
+  // Bumped when a per-platform quality override changes, so the hint under
+  // the quality toggle repaints (storage itself is not reactive). The map
+  // snapshot lives in state; resolveOne reads storage fresh at call time.
+  const [platformQualityMap, setPlatformQualityMap] = useState<QualityMap>(() =>
+    typeof window === 'undefined' ? {} : getStoredQualityMap(),
+  )
 
   // Thin aliases: the store already persists and notifies, so these exist only
   // to keep the call sites in this file reading the same as before.
@@ -515,7 +597,12 @@ export function DownloaderApp() {
   ) =>
     resolve(target, {
       type: state.downloadType,
-      quality: opts?.quality ?? quality,
+      // An explicit re-pick wins; otherwise a platform's remembered choice
+      // (set by an earlier re-pick on that platform's result); otherwise the
+      // global pref. See lib/platformQuality.
+      quality:
+        opts?.quality ??
+        effectiveQuality(quality, detectPlatform(target) as SupportedPlatform, getStoredQualityMap()),
       format: opts?.format ?? format,
       proToken,
     })
@@ -585,6 +672,15 @@ export function DownloaderApp() {
           },
         })
         void rememberInHistory(target, data.metadata)
+        // A deliberate HD/SD pick on a result is taste for that platform —
+        // remembered locally so the next link from it resolves the same way.
+        if (nextFormat === 'video') {
+          rememberPlatformQuality(
+            detectPlatform(target) as SupportedPlatform,
+            nextQuality,
+          )
+          setPlatformQualityMap(getStoredQualityMap())
+        }
       } else {
         const fe = friendlyError(data.error, target)
         dispatch({ type: 'SET_MESSAGE', payload: `${fe.title} — ${fe.hint}` })
@@ -765,6 +861,53 @@ export function DownloaderApp() {
     clearHistory()
   }
 
+  // Recent list portability: the history is local-only by design, so export /
+  // import are how it moves between a phone and a laptop. Export writes the
+  // exact stored JSON; import merges (newest wins) and the store notifies.
+  const handleExportHistory = () => {
+    saveBlob(
+      new Blob([exportHistory()], { type: 'application/json' }),
+      'social-downloader-history.json',
+    )
+  }
+
+  const importFileRef = useRef<HTMLInputElement>(null)
+  const [historyNote, setHistoryNote] = useState('')
+  const historyNoteTimer = useRef<number | null>(null)
+
+  // The note is transient feedback — it says what one click just did, then
+  // gets out of the way. Without the timer it sat under the list until a
+  // reload, long after it stopped describing anything.
+  const showHistoryNote = useCallback((text: string) => {
+    setHistoryNote(text)
+    if (historyNoteTimer.current !== null) {
+      window.clearTimeout(historyNoteTimer.current)
+    }
+    historyNoteTimer.current = window.setTimeout(() => setHistoryNote(''), 6000)
+  }, [])
+
+  const handleImportHistoryFile = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    try {
+      const result = importHistory(await file.text())
+      if (result === null) {
+        showHistoryNote(t('importBadFile'))
+        return
+      }
+      showHistoryNote(
+        result.added > 0
+          ? t('importedLinks', { n: result.added })
+          : t('importNothingNew'),
+      )
+    } catch {
+      showHistoryNote(t('importUnreadable'))
+    }
+  }
+
   // Runs once on mount to honour a PWA share-target / deep link (?url= /
   // ?text=). Sharing a link straight from the TikTok/IG/YouTube app lands here —
   // we auto-resolve it and strip the query so a refresh doesn't fire it again.
@@ -810,7 +953,7 @@ export function DownloaderApp() {
       // "preparing" state until the stream starts reporting.
       dispatch({ type: 'SET_DOWNLOADING', payload: true })
       dispatch({ type: 'SET_PROGRESS', payload: null })
-      dispatch({ type: 'SET_MESSAGE', payload: 'Preparing your download…' })
+      dispatch({ type: 'SET_MESSAGE', payload: t('preparingDownload') })
       const outcome = await downloadDirectWithProgress(direct, filename, (p) =>
         dispatch({ type: 'SET_PROGRESS', payload: p }),
       )
@@ -819,7 +962,7 @@ export function DownloaderApp() {
         dispatch({ type: 'SET_PROGRESS', payload: null })
         dispatch({
           type: 'SET_MESSAGE',
-          payload: 'Video downloaded successfully! 🎉',
+          payload: t('msgVideoDone'),
         })
         dispatch({ type: 'SET_URL', payload: '' })
         return
@@ -840,7 +983,7 @@ export function DownloaderApp() {
           dispatch({ type: 'SET_PROGRESS', payload: null })
           dispatch({
             type: 'SET_MESSAGE',
-            payload: 'Download started. Check your downloads. 🎉',
+            payload: t('msgDownloadStarted'),
           })
         }, 2800)
         return
@@ -873,7 +1016,7 @@ export function DownloaderApp() {
 
       dispatch({
         type: 'SET_MESSAGE',
-        payload: 'Video downloaded successfully! 🎉',
+        payload: t('msgVideoDone'),
       })
       dispatch({ type: 'SET_URL', payload: '' })
     } catch (error) {
@@ -930,7 +1073,7 @@ export function DownloaderApp() {
 
       dispatch({
         type: 'SET_MESSAGE',
-        payload: 'Slideshow video rendered and downloaded! 🎬',
+        payload: t('msgSlideshowDone'),
       })
       dispatch({ type: 'SET_URL', payload: '' })
     } catch (error) {
@@ -966,7 +1109,7 @@ export function DownloaderApp() {
       })
       dispatch({ type: 'SET_DOWNLOADING_AUDIO', payload: true })
       dispatch({ type: 'SET_PROGRESS', payload: null })
-      dispatch({ type: 'SET_MESSAGE', payload: 'Preparing your download…' })
+      dispatch({ type: 'SET_MESSAGE', payload: t('preparingDownload') })
       const outcome = await downloadDirectWithProgress(direct, filename, (p) =>
         dispatch({ type: 'SET_PROGRESS', payload: p }),
       )
@@ -975,7 +1118,7 @@ export function DownloaderApp() {
         dispatch({ type: 'SET_PROGRESS', payload: null })
         dispatch({
           type: 'SET_MESSAGE',
-          payload: 'Audio downloaded successfully! 🎵',
+          payload: t('msgAudioDone'),
         })
         dispatch({ type: 'SET_URL', payload: '' })
         return
@@ -993,7 +1136,7 @@ export function DownloaderApp() {
           dispatch({ type: 'SET_PROGRESS', payload: null })
           dispatch({
             type: 'SET_MESSAGE',
-            payload: 'Download started. Check your downloads. 🎵',
+            payload: t('msgDownloadStarted'),
           })
         }, 2800)
         return
@@ -1024,7 +1167,7 @@ export function DownloaderApp() {
 
       dispatch({
         type: 'SET_MESSAGE',
-        payload: 'Audio downloaded successfully! 🎵',
+        payload: t('msgAudioDone'),
       })
       dispatch({ type: 'SET_URL', payload: '' })
     } catch (error) {
@@ -1210,7 +1353,7 @@ export function DownloaderApp() {
         }
         dispatch({
           type: 'SET_MESSAGE',
-          payload: `${selectedImages.length} image(s) downloaded individually! 🖼️`,
+          payload: t('msgImagesDone', { n: selectedImages.length }),
         })
         dispatch({ type: 'SET_URL', payload: '' })
       }
@@ -1301,7 +1444,7 @@ export function DownloaderApp() {
             autoCorrect='off'
             autoComplete='off'
             spellCheck={false}
-            placeholder='Paste a video link…'
+            placeholder={t('pastePlaceholder')}
             value={state.url}
             onChange={(e) => {
               if (urlError) setUrlError(null)
@@ -1334,11 +1477,11 @@ export function DownloaderApp() {
             <button
               type='button'
               onClick={handlePaste}
-              aria-label='Paste link from clipboard'
+              aria-label={t('pasteAria')}
               className='card-hover absolute right-1.5 flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.06] px-2.5 py-1.5 text-xs font-medium text-white/70 hover:text-white active:scale-95'
             >
               <ClipboardIcon className='h-3.5 w-3.5' />
-              Paste
+              {t('paste')}
             </button>
           )}
         </div>
@@ -1359,10 +1502,10 @@ export function DownloaderApp() {
           {state.loading ? (
             <span className='relative flex items-center'>
               <SpinnerIcon className='-ml-1 mr-2 h-4 w-4 md:h-5 md:w-5' />
-              Processing...
+              {t('processing')}
             </span>
           ) : (
-            <span className='relative'>Download</span>
+            <span className='relative'>{t('downloadBtn')}</span>
           )}
         </button>
       </Surface>
@@ -1436,28 +1579,58 @@ export function DownloaderApp() {
         </div>
 
         {format === 'video' && (
-          <div className='flex items-center gap-2'>
-            <span className='text-white/50'>Quality</span>
-            <div
-              role='group'
-              aria-label='Preferred video quality'
-              className='inline-flex rounded-full border border-white/10 bg-white/[0.03] p-0.5'
-            >
-              {(['hd', 'sd'] as const).map((q) => (
-                <button
-                  key={q}
-                  type='button'
-                  onClick={() => changeQuality(q)}
-                  aria-pressed={quality === q}
-                  className={`rounded-full px-3 py-1 font-medium transition-colors ${
-                    quality === q
-                      ? 'bg-cyan-400/90 text-[#04171b]'
-                      : 'text-white/55 hover:text-white'
-                  }`}
-                >
-                  {q === 'hd' ? 'HD' : 'Data saver'}
-                </button>
-              ))}
+          <div className='flex flex-col gap-1'>
+            <div className='flex items-center gap-2'>
+              <span className='text-white/50'>Quality</span>
+              <div
+                role='group'
+                aria-label='Preferred video quality'
+                className='inline-flex rounded-full border border-white/10 bg-white/[0.03] p-0.5'
+              >
+                {(['hd', 'sd'] as const).map((q) => (
+                  <button
+                    key={q}
+                    type='button'
+                    onClick={() => changeQuality(q)}
+                    aria-pressed={quality === q}
+                    className={`rounded-full px-3 py-1 font-medium transition-colors ${
+                      quality === q
+                        ? 'bg-cyan-400/90 text-[#04171b]'
+                        : 'text-white/55 hover:text-white'
+                    }`}
+                  >
+                    {q === 'hd' ? 'HD' : 'Data saver'}
+                  </button>
+                ))}
+              </div>
+              {/* A re-pick on a result is remembered per platform; when the
+                  link in the field belongs to one, say so and offer the way
+                  back — otherwise the override would look like a broken
+                  toggle. The version counter exists because the memory lives
+                  in storage, not state: clearing must repaint this line. */}
+              {(() => {
+                const platform = detectPlatform(state.url || state.originalUrl)
+                if (platform === 'unknown') return null
+                const remembered = platformQualityMap[platform]
+                if (!remembered) return null
+                const label = PLATFORM_DISPLAY[platform] ?? platform
+                return (
+                  <span className='text-[11px] text-white/40'>
+                    {label}:{' '}
+                    {remembered === 'hd' ? 'HD' : 'Data saver'} ·{' '}
+                    <button
+                      type='button'
+                      onClick={() => {
+                        clearPlatformQuality(platform)
+                        setPlatformQualityMap((m) => removeQuality(m, platform))
+                      }}
+                      className='underline underline-offset-2 transition-colors hover:text-white/70'
+                    >
+                      reset
+                    </button>
+                  </span>
+                )
+              })()}
             </div>
           </div>
         )}
@@ -1477,23 +1650,65 @@ export function DownloaderApp() {
           <div className='mb-2 flex items-center justify-between'>
             <span className='flex items-center gap-1.5 text-xs font-medium text-white/50'>
               <ClockIcon className='h-3.5 w-3.5' />
-              Recent
+              {t('recent')}
             </span>
-            <button
-              type='button'
-              onClick={handleClearHistory}
-              className='flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-white/50 transition-colors hover:text-white/80'
-            >
-              <TrashIcon className='h-3 w-3' />
-              Clear
-            </button>
+            <div className='flex items-center gap-1'>
+              {/* Portability for a local-only list: export writes the stored
+                  JSON, import merges a file back in. Text-only buttons, same
+                  weight as Clear, so they read as plumbing rather than CTA. */}
+              <button
+                type='button'
+                onClick={handleExportHistory}
+                className='rounded-md px-1.5 py-0.5 text-[11px] text-white/50 transition-colors hover:text-white/80'
+              >
+                {t('export')}
+              </button>
+              <button
+                type='button'
+                onClick={() => importFileRef.current?.click()}
+                className='rounded-md px-1.5 py-0.5 text-[11px] text-white/50 transition-colors hover:text-white/80'
+              >
+                {t('importLabel')}
+              </button>
+              <input
+                ref={importFileRef}
+                type='file'
+                accept='.json,application/json'
+                onChange={(e) => void handleImportHistoryFile(e)}
+                className='hidden'
+                aria-hidden
+                tabIndex={-1}
+              />
+              <button
+                type='button'
+                onClick={handleClearHistory}
+                className='flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-white/50 transition-colors hover:text-white/80'
+              >
+                <TrashIcon className='h-3 w-3' />
+                {t('clear')}
+              </button>
+            </div>
           </div>
+          {history.length > 8 && (
+            <input
+              value={historyQuery}
+              onChange={(e) => setHistoryQuery(e.target.value)}
+              placeholder={t('filterRecent')}
+              aria-label={t('filterRecent')}
+              className='mb-2 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-white caret-cyan-300 outline-none placeholder:text-white/35 focus:border-cyan-400/40'
+            />
+          )}
+          {historyNote && (
+            <p className='mb-2 text-right text-[11px] text-white/45'>
+              {historyNote}
+            </p>
+          )}
           <ul
             className={`space-y-1.5 ${
               showAllHistory ? 'max-h-72 overflow-y-auto pr-1' : ''
             }`}
           >
-            {(showAllHistory ? history : history.slice(0, 5)).map((h) => (
+            {visibleHistory.map((h) => (
               <li key={h.url} className='relative'>
                 <button
                   type='button'
@@ -1527,7 +1742,7 @@ export function DownloaderApp() {
                     <span className='block truncate text-[10px] text-white/50'>
                       {h.author ||
                         (h.platform ? PLATFORM_DISPLAY[h.platform] : '') ||
-                        'Saved link'}
+                        t('savedLink')}
                     </span>
                   </span>
                 </button>
@@ -1551,7 +1766,7 @@ export function DownloaderApp() {
               onClick={() => setShowAllHistory((v) => !v)}
               className='card-hover mt-2 w-full rounded-lg border border-white/[0.06] py-1.5 text-center text-[11px] font-medium text-white/50 hover:text-white/80'
             >
-              {showAllHistory ? 'Show less' : `View all (${history.length})`}
+              {showAllHistory ? t('showLess') : t('viewAll', { n: history.length })}
             </button>
           )}
         </div>
@@ -1583,7 +1798,24 @@ export function DownloaderApp() {
                 : 'bg-red-500/20 text-red-300 border border-red-500/30'
             }`}
           >
-            {state.message}
+            {displayMessage(t, state.message)}
+            {!isSuccessMessage(state.message) &&
+              !isResolvingOrDownloading(state) &&
+              state.originalUrl && (
+                // A failed resolve usually means "the source hiccuped", not
+                // "give up" — offer the retry where the failure is, instead
+                // of making someone scroll up and re-click Process. Gated on
+                // isResolvingOrDownloading because "Preparing your download…"
+                // is not a success message either: without it, every running
+                // transfer offers to restart itself.
+                <button
+                  type='button'
+                  onClick={() => void handleProcess(state.originalUrl)}
+                  className='btn-press mx-auto mt-2 block rounded-lg border border-white/25 px-3 py-1 text-xs font-semibold transition-colors hover:bg-white/10'
+                >
+                  {t('tryAgain')}
+                </button>
+              )}
           </div>
         )}
 
@@ -2010,7 +2242,7 @@ export function DownloaderApp() {
                           {state.downloadingImages ? (
                             <>
                               <SpinnerIcon className='flex-shrink-0 h-4 w-4' />
-                              <span>Downloading...</span>
+                              <span>{t('downloadingBtn')}</span>
                             </>
                           ) : (
                             <>
@@ -2140,8 +2372,8 @@ export function DownloaderApp() {
                             <DownloadIcon className='flex-shrink-0 h-5 w-5' />
                             <span>
                               {state.videoMetadata?.isPhotoCarousel
-                                ? 'Video (slideshow)'
-                                : 'Video'}
+                                ? t('videoSlideshowBtn')
+                                : t('videoBtn')}
                             </span>
                           </span>
                         )}
@@ -2159,15 +2391,15 @@ export function DownloaderApp() {
                         {state.downloadingAudio ? (
                           <span className='relative flex items-center gap-2'>
                             <SpinnerIcon className='flex-shrink-0 h-4 w-4' />
-                            <span>Downloading...</span>
+                            <span>{t('downloadingBtn')}</span>
                           </span>
                         ) : (
                           <span className='relative flex items-center gap-2'>
                             <MusicIcon className='flex-shrink-0 h-5 w-5' />
                             <span>
                               {state.videoMetadata?.isPhotoCarousel
-                                ? 'Download Audio'
-                                : 'Extract Audio'}
+                                ? t('downloadAudioBtn')
+                                : t('extractAudio')}
                             </span>
                           </span>
                         )}
@@ -2176,6 +2408,34 @@ export function DownloaderApp() {
                   </div>
                 )
               })()}
+
+              {/* Extras row. Share and Copy-link apply to every resolved
+                  result, so the row's own condition is "there is a result" —
+                  gating it on the thumbnail would have hidden both from every
+                  long-tail link that resolves without a cover image. The two
+                  conditional members (cover image, caption picker) each render
+                  nothing when they do not apply, so the common path gains no
+                  noise. */}
+              {state.originalUrl && (
+                <div className='flex flex-wrap items-center justify-center gap-2'>
+                  {state.videoMetadata?.thumbnail && (
+                    <ThumbnailButton
+                      url={state.videoMetadata.thumbnail}
+                      title={state.videoMetadata.title}
+                    />
+                  )}
+                  <ShareButton
+                    title={state.videoMetadata?.title || state.originalUrl}
+                    url={state.originalUrl}
+                  />
+                  <CopyLinkButton url={state.originalUrl} />
+                  {state.videoMetadata?.platform === 'youtube' &&
+                    (() => {
+                      const ytId = parseYouTubeId(state.originalUrl)
+                      return ytId ? <SubtitlePicker videoId={ytId} /> : null
+                    })()}
+                </div>
+              )}
 
               {/* iOS: video downloads land in Files, not the camera roll, so
                   point users at the one extra tap that saves to Photos. Only for
@@ -2198,7 +2458,7 @@ export function DownloaderApp() {
                   if (!isDownloading) {
                     return (
                       <p className='text-white/50 text-xs text-center'>
-                        Click to download your content
+                        {t('clickToDownload')}
                       </p>
                     )
                   }
@@ -2219,11 +2479,7 @@ export function DownloaderApp() {
                           />
                         )}
                       </div>
-                      <p className='text-center text-xs text-white/50'>
-                        {pct === null
-                          ? 'Preparing your download…'
-                          : `Downloading… ${pct}%`}
-                      </p>
+                      <ProgressLine pct={pct} />
                     </div>
                   )
                 })()}

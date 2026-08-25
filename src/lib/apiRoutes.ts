@@ -17,12 +17,25 @@
  */
 
 import { Downloader } from './downloader'
-import { validateUrl, detectPlatform } from './validator'
+import { validateUrl, detectPlatform, parseYouTubeId } from './validator'
 import { getCached, setCached } from './responseCache'
 import { readEdgeCache, writeEdgeCache, type WaitUntilContext } from './edgeCache'
 import { slugify } from './filename'
 import { nativeMediaAvailable, nativeMediaUnavailable } from './nativeMedia'
 import { MEDIA_PROXY_HANDLERS } from './mediaProxy'
+import { extractPlaylistItems, PLAYLIST_SCAN_BYTES } from './playlist'
+import {
+  detectImportSource,
+  parseRedditListing,
+  parseRssItems,
+} from './importSources'
+import {
+  eventsToSubtitle,
+  findTrackUrl,
+  extractCaptionTracks,
+  parseJson3,
+} from './subtitles'
+import { fetchPlayerResponse } from './youtubeInnertube'
 import { type TokenPayload, verifyToken } from './proToken'
 import { handleWebhook } from './billing/webhook'
 import { handleBmcWebhook } from './billing/bmc'
@@ -209,7 +222,7 @@ export async function handleDownload(
         {
           success: false,
           error:
-            'Invalid URL. Please paste a link from a supported platform: TikTok, X, Instagram, Facebook, YouTube, Pinterest, Reddit, Threads, Snapchat, Twitch, or Vimeo.',
+            'Invalid URL. Paste a public post or video link — TikTok, X, Instagram, Facebook, YouTube, Pinterest, Reddit, Threads, Snapchat, Twitch, Vimeo, or any other site.',
         },
         { status: 400 },
       )
@@ -378,6 +391,254 @@ export async function handleDownload(
 }
 
 /**
+ * Expand a collection link into batch rows.
+ *
+ * One endpoint, four sources — YouTube playlists, Reddit subreddits/profiles,
+ * Pinterest boards, Vimeo channels/users — because the visitor's question is
+ * "give me all of these", not "speak YouTube". Detection and parsing live in
+ * importSources.ts (unit-tested); this handler authenticates, fetches each
+ * source once, and shapes the identical `{videos:[{url,title}]}` response so
+ * the client stays source-blind.
+ *
+ * Pro-gated (`p` grant) like every expansion path: one fetch here multiplies
+ * downstream resolve volume, so free traffic has no reason to hammer it.
+ */
+const IMPORT_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
+
+async function fetchImportText(
+  feedUrl: string,
+  timeoutMs = 15_000,
+): Promise<{ ok: true; text: string } | { ok: false; status?: number }> {
+  try {
+    const response = await fetch(feedUrl, {
+      headers: { 'User-Agent': IMPORT_UA, 'Accept-Language': 'en-US,en;q=0.9' },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    if (!response.ok) return { ok: false, status: response.status }
+    return { ok: true, text: await response.text() }
+  } catch {
+    return { ok: false }
+  }
+}
+
+export async function handlePlaylist(request: Request): Promise<Response> {
+  const claims = await readProToken(request)
+  if (claims?.p !== true) {
+    return Response.json(
+      { success: false, error: 'Playlist import is a supporter feature.' },
+      { status: 403 },
+    )
+  }
+
+  try {
+    const { url } = await request.json()
+    const source =
+      typeof url === 'string' ? detectImportSource(url) : null
+
+    if (!source) {
+      return Response.json(
+        {
+          success: false,
+          error:
+            'Paste a YouTube playlist link, a Reddit subreddit or user page, a Pinterest board, or a Vimeo channel or user.',
+        },
+        { status: 400 },
+      )
+    }
+
+    let items: Array<{ url: string; title?: string }> = []
+
+    if (source.kind === 'youtube') {
+      // The original path: YouTube's playlist HTML carries its entries in an
+      // early inline script, scanned bounded rather than parsed whole.
+      const page = await fetchImportText(
+        `https://www.youtube.com/playlist?list=${source.listId}&hl=en`,
+      )
+      if (!page.ok) {
+        return Response.json(
+          { success: false, error: `YouTube answered ${page.status ?? 'with an error'} for that playlist.` },
+          { status: 502 },
+        )
+      }
+      items = extractPlaylistItems(page.text.slice(0, PLAYLIST_SCAN_BYTES))
+    } else if (source.kind === 'reddit') {
+      // Reddit serves clean JSON to a browser UA from any IP; www first, the
+      // older host as the fallback when the listing endpoint refuses.
+      let page = await fetchImportText(source.feedUrl)
+      if (!page.ok && source.feedUrl.includes('www.reddit.com')) {
+        page = await fetchImportText(source.feedUrl.replace('www.reddit.com', 'old.reddit.com'))
+      }
+      if (!page.ok) {
+        return Response.json(
+          { success: false, error: 'Reddit refused that listing. It may be private or quarantined.' },
+          { status: 502 },
+        )
+      }
+      items = parseRedditListing(page.text)
+    } else {
+      // Pinterest board RSS / Vimeo videos RSS — plain XML both.
+      const page = await fetchImportText(source.feedUrl)
+      if (!page.ok) {
+        return Response.json(
+          { success: false, error: `That ${source.kind} feed could not be fetched (${page.status ?? 'network error'}).` },
+          { status: 502 },
+        )
+      }
+      items = parseRssItems(page.text, {
+        linkMustInclude:
+          source.kind === 'pinterest' ? 'pinterest.' : 'vimeo.com/',
+      })
+    }
+
+    if (items.length === 0) {
+      return Response.json(
+        {
+          success: false,
+          error:
+            'No downloadable posts found there. The collection may be empty, private, or media-free.',
+        },
+        { status: 422 },
+      )
+    }
+
+    return Response.json({ success: true, videos: items })
+  } catch (error) {
+    return resolveFailure(error, 'Failed to expand collection')
+  }
+}
+
+/**
+ * Liveness for uptime monitors (the free-tier ones included). Deliberately
+ * dependency-free: no D1 read, no extractor call — this answers "is the
+ * Worker serving" in microseconds, which is what a probe needs and all it
+ * should cost. Parity with deploy/resolver's /health.
+ */
+export function handleHealth(): Response {
+  return Response.json(
+    { status: 'ok' },
+    { headers: { 'Cache-Control': 'no-store' } },
+  )
+}
+
+/**
+ * YouTube subtitles, Pro-gated.
+ *
+ * One POST serves two shapes: `{videoId|url, list:true}` returns the track
+ * list; `{lang, auto?, fmt?}` returns the converted file as text/plain. The
+ * client fetches with its token and saves the blob itself — a download link
+ * navigating at this route could not carry the X-Pro-Token header, and a
+ * token in the query string would end up in logs.
+ */
+export async function handleSubtitles(request: Request): Promise<Response> {
+  const claims = await readProToken(request)
+  if (claims?.p !== true) {
+    return Response.json(
+      { success: false, error: 'Subtitles are a supporter feature.' },
+      { status: 403 },
+    )
+  }
+
+  try {
+    const body = (await request.json()) as {
+      url?: string
+      videoId?: string
+      lang?: string
+      auto?: boolean
+      fmt?: string
+      list?: boolean
+    }
+
+    const videoId =
+      typeof body.videoId === 'string' && /^[\w-]{11}$/.test(body.videoId)
+        ? body.videoId
+        : typeof body.url === 'string'
+          ? parseYouTubeId(body.url)
+          : null
+    if (!videoId) {
+      return Response.json(
+        { success: false, error: 'A YouTube link or video id is required.' },
+        { status: 400 },
+      )
+    }
+
+    const data = await fetchPlayerResponse(videoId)
+    if (!data) {
+      return Response.json(
+        { success: false, error: 'Could not load that video from YouTube. It may be private or unavailable.' },
+        { status: 502 },
+      )
+    }
+
+    if (body.list === true) {
+      return Response.json({
+        success: true,
+        title: data.videoDetails?.title ?? '',
+        tracks: extractCaptionTracks(data),
+      })
+    }
+
+    const languageCode =
+      typeof body.lang === 'string' && /^[a-zA-Z-]{2,12}$/.test(body.lang)
+        ? body.lang
+        : null
+    if (!languageCode) {
+      return Response.json(
+        { success: false, error: 'A subtitle language is required.' },
+        { status: 400 },
+      )
+    }
+    const auto = body.auto === true
+    const trackUrl = findTrackUrl(data, languageCode, auto)
+    if (!trackUrl) {
+      return Response.json(
+        { success: false, error: 'That subtitle track does not exist for this video.' },
+        { status: 404 },
+      )
+    }
+
+    // json3 rather than the XML default: small, JSON.parse-able, and the only
+    // format whose shape this module has to know.
+    const response = await fetch(`${trackUrl}&fmt=json3`, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+      },
+      signal: AbortSignal.timeout(12_000),
+    })
+    if (!response.ok) {
+      return Response.json(
+        { success: false, error: `YouTube refused the caption request (${response.status}).` },
+        { status: 502 },
+      )
+    }
+    const events = parseJson3(await response.text())
+    const format = body.fmt === 'vtt' ? 'vtt' : 'srt'
+    const content = eventsToSubtitle(events, format)
+    const emptyThreshold = format === 'vtt' ? 'WEBVTT'.length + 2 : 0
+    if (content.trim().length <= emptyThreshold) {
+      return Response.json(
+        { success: false, error: 'That track exists but carries no cues.' },
+        { status: 422 },
+      )
+    }
+
+    const title = slugify(data.videoDetails?.title ?? '', 60) || videoId
+    const filename = `${title}.${languageCode}${auto ? '.auto' : ''}.${format}`
+    return new Response(content, {
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Cache-Control': 'no-store',
+      },
+    })
+  } catch (error) {
+    return resolveFailure(error, 'Failed to fetch subtitles')
+  }
+}
+
+/**
  * Image URLs may arrive already wrapped in our own `/api/image?url=<raw>`
  * display proxy (Instagram). Unwrap back to the raw CDN URL so it can be
  * re-wrapped cleanly rather than double-proxied.
@@ -456,6 +717,9 @@ function nativeMediaRoute(feature: string): Handler {
  */
 export const API_ROUTES: Record<string, { method: string; handler: Handler }> = {
   '/api/download': { method: 'POST', handler: handleDownload },
+  '/api/playlist': { method: 'POST', handler: handlePlaylist },
+  '/api/subtitles': { method: 'POST', handler: handleSubtitles },
+  '/api/health': { method: 'GET', handler: handleHealth },
   '/api/images': { method: 'POST', handler: handleImages },
   '/api/slideshow': { method: 'POST', handler: nativeMediaRoute('Slideshow rendering') },
   '/api/tiktok': { method: 'GET', handler: nativeMediaRoute('Direct TikTok download') },

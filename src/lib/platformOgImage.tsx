@@ -13,6 +13,12 @@ interface PlatformGlyph {
 }
 
 const PLATFORM_GLYPHS: Record<PlatformSlug, PlatformGlyph> = {
+  'video-downloader': {
+    bg: '#0891B2',
+    glow: '34, 211, 238',
+    // A film clapper/board glyph matching FilmIcon's outline style.
+    path: 'M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zm14 3.5v2h2v-2h-2zm-4 0v2h2v-2h-2zM6 8.5v2h2v-2H6zm10 7.5h4v-3.5h-4V16z',
+  },
   'tiktok-downloader': {
     bg: '#010101',
     glow: '236, 72, 153',

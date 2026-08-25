@@ -31,7 +31,7 @@ import {
 import { htmlScrapingAvailable, nativeMediaAvailable } from './nativeMedia'
 import { getMediaReferer } from './proxyHeaders'
 import { tryYouTubeInnertube } from './youtubeInnertube'
-import { ytdlpInfo } from './ytdlp'
+import { ytdlpInfo, ytdlpProbe } from './ytdlp'
 
 // Retry a flaky network op with exponential backoff + light jitter. Only retries
 // errors the caller marks retryable (429 / 5xx / timeouts) — a hard 404/private
@@ -718,11 +718,19 @@ export class Downloader {
   // Whether this instance may attach IG_SESSIONID. See instagramSessionId.
   private readonly credentialed: boolean
 
+  // Never ask any Cobalt instance. Set only by the MP3 fallback, which runs
+  // after the audio attempt has already watched every instance fail — asking
+  // them all again just to resolve the same URL doubled the worst-case wait
+  // for an answer (measured: >150 s when the instances stall instead of
+  // erroring) without changing what could be reached.
+  private readonly skipCobalt: boolean
+
   constructor(opts?: {
     quality?: 'hd' | 'sd'
     mode?: 'auto' | 'audio'
     priority?: boolean
     credentialed?: boolean
+    skipCobalt?: boolean
   }) {
     this.videoQuality = opts?.quality === 'sd' ? 'sd' : 'hd'
     this.mode = opts?.mode === 'audio' ? 'audio' : 'auto'
@@ -730,6 +738,7 @@ export class Downloader {
     // Defaults to false, so every construction site that does not think about
     // this — the CLI, tests, any future caller — resolves anonymously.
     this.credentialed = opts?.credentialed === true
+    this.skipCobalt = opts?.skipCobalt === true
   }
 
   private readonly userAgent = BROWSER_AGENT
@@ -954,8 +963,10 @@ export class Downloader {
       return this.downloadGeneric(url, platform)
     }
 
+    // Unreachable with every platform routed above — kept as the type-level
+    // safety net so an added enum value fails loudly instead of silently.
     throw new Error(
-      'Unsupported URL. Please paste a link from a supported platform (TikTok, X, Instagram, Facebook, YouTube, Pinterest, Reddit, Threads, Snapchat, Twitch, or Vimeo).',
+      'Unsupported URL. Paste a public post or video link from any site.',
     )
   }
 
@@ -971,7 +982,7 @@ export class Downloader {
     url: string,
     platform: SupportedPlatform,
   ): Promise<VideoData> {
-    const result = await this.tryCobaltInstances(url)
+    let result = await this.tryCobaltInstances(url)
 
     if (!result || !result.musicUrl) {
       // Cobalt is the only audio path for most platforms, and for YouTube it is
@@ -982,11 +993,17 @@ export class Downloader {
       // adaptive stream needs no muxing, so unlike video it comes back at full
       // quality.
       const viaInnertube = await this.tryYouTubeInnertubeAudio(url, platform)
-      if (viaInnertube) return viaInnertube
-
-      throw new Error(
-        'Could not extract audio from this link. The post may be private, region-locked, or the audio source may be unavailable (YouTube blocks audio extraction from some networks).',
-      )
+      if (viaInnertube) {
+        result = viaInnertube
+      } else {
+        const viaFallback = await this.fallbackAudioViaVideo(url)
+        if (!viaFallback?.musicUrl) {
+          throw new Error(
+            'Could not extract audio from this link. The post may be private, region-locked, or the audio source may be unavailable (YouTube blocks audio extraction from some networks).',
+          )
+        }
+        result = viaFallback
+      }
     }
 
     // Enrich sparse Cobalt metadata from the platform's public oEmbed.
@@ -1037,6 +1054,66 @@ export class Downloader {
   }
 
   /**
+   * The MP3 flow's last line of defence: when no audio-specific extractor
+   * answered, resolve the link through the ordinary video path and hand its
+   * stream to the audio route.
+   *
+   * This is safe on every deployment because /api/audio already streams MP4
+   * sources and browsers pull the audio track out of an mp4 container
+   * themselves — the same behaviour the slideshow path relies on. It turns
+   * "MP3" from a Cobalt-only feature into something that works anywhere the
+   * video download works: Reddit, Pinterest, Threads, the whole generic long
+   * tail, plus a native yt-dlp bestaudio track where binaries exist (probed
+   * first; it avoids downloading video bytes nobody will keep).
+   *
+   * A fresh auto-mode instance does the resolving so this method can never
+   * re-enter itself — `downloadAudio` only runs in 'audio' mode, which a new
+   * Downloader never has.
+   */
+  private async fallbackAudioViaVideo(url: string): Promise<VideoData | null> {
+    // A real audio-only stream when we can get one. Instant null on Cloudflare.
+    if (nativeMediaAvailable()) {
+      const probe = await ytdlpProbe(url, 'audio')
+      if (probe?.downloadUrl) {
+        return {
+          id: parseVideoId(url) || url.slice(-32),
+          title: probe.title || filenameTitle(url),
+          url,
+          thumbnail: probe.thumbnail || '',
+          duration: Math.round(probe.duration ?? 0),
+          author: probe.uploader || new URL(url).hostname.replace(/^www\./, ''),
+          description: '',
+          downloadUrl: '',
+          musicUrl: probe.downloadUrl,
+          tunnel: false,
+        }
+      }
+    }
+
+    let resolved: VideoData | null = null
+    try {
+      // skipCobalt: this instance runs immediately after the audio attempt
+      // watched every Cobalt instance miss, so the video resolve skips them
+      // and goes straight to the extractors that have not had their turn.
+      resolved = await new Downloader({
+        quality: this.videoQuality,
+        mode: 'auto',
+        skipCobalt: true,
+      }).downloadVideo(url)
+    } catch {
+      return null
+    }
+
+    // A TikTok photo carousel carries its real soundtrack separately — prefer
+    // that over any video. Otherwise the resolved video stream becomes the
+    // audio source. downloadUrl is blanked either way: like the Innertube
+    // audio path, this method's whole output is the audio track.
+    const source = resolved.musicUrl || resolved.downloadUrl
+    if (!source) return null
+    return { ...resolved, musicUrl: source, downloadUrl: '', tunnel: false }
+  }
+
+  /**
    * Generic extractor for platforms without a bespoke path. Cobalt tunnels the
    * media through its own server, so the returned URL isn't bound to a signed
    * CDN session and streams from any IP — the only extraction path that works
@@ -1080,6 +1157,20 @@ export class Downloader {
     // handful of bounded regexes, and it is the honest majority of the long
     // tail: small hosts, blogs, and news sites publish their media URL.
     methods.push(() => this.tryPageScrape(url))
+    // After tag-scraping: yt-dlp reads every player shape the scrapers can't,
+    // at the cost of spawning a process. Gated on native media, so on Cloudflare
+    // this is one env comparison returning null and the chain is unchanged;
+    // locally it is what makes an arbitrary link resolve.
+    if (nativeMediaAvailable()) {
+      methods.push(() => this.tryNativeExtractor(url))
+    }
+
+    // A wall is definite news about one site, but it is news about *our fetch*:
+    // a native extractor impersonates a browser and often gets through where
+    // the direct fetch did not. So the error is held rather than thrown, every
+    // remaining method still runs, and it only surfaces if nothing resolves —
+    // which keeps today's message exactly as it is wherever nothing new works.
+    let blocked: OriginBlockedError | null = null
 
     for (const method of methods) {
       try {
@@ -1097,13 +1188,44 @@ export class Downloader {
       } catch (e) {
         // The one failure worth surfacing verbatim: it is a definite answer
         // about a specific site, not another extractor declining to guess.
-        if (e instanceof OriginBlockedError) throw e
+        if (e instanceof OriginBlockedError) {
+          blocked = e
+          continue
+        }
         console.warn(`${platform} method failed, trying next...`, e)
       }
     }
+    if (blocked) throw blocked
     throw new Error(
       `Could not download this ${platform} content. The post may be private, region-locked, unavailable, or not supported by our extractor.`,
     )
+  }
+
+  /**
+   * The universal extractor: yt-dlp's own extractor set plus its generic one,
+   * run from this process. Only ever reached where native binaries exist — see
+   * the gate in downloadGeneric — so Cloudflare never spawns anything and the
+   * Worker bundle's copy of this method always returns null without importing
+   * the stubbed package.
+   *
+   * The URL comes back progressive by construction (ytdlpProbe filters for
+   * http(s) video+audio in one file), so it re-serves through the same proxy
+   * path a scraped URL takes, with real title/author/thumbnail attached.
+   */
+  private async tryNativeExtractor(url: string): Promise<VideoData | null> {
+    const probe = await ytdlpProbe(url, 'video')
+    if (!probe?.downloadUrl) return null
+    return {
+      id: parseVideoId(url) || url.slice(-32),
+      title: probe.title || filenameTitle(url),
+      url,
+      thumbnail: probe.thumbnail || '',
+      duration: Math.round(probe.duration ?? 0),
+      author: probe.uploader || new URL(url).hostname.replace(/^www\./, ''),
+      description: '',
+      downloadUrl: probe.downloadUrl,
+      isPhotoCarousel: false,
+    }
   }
 
   /**
@@ -2254,6 +2376,9 @@ export class Downloader {
 
   // Try every cobalt instance in order.
   private async tryCobaltInstances(url: string): Promise<VideoData | null> {
+    // The MP3 fallback's inner resolve arrives here already knowing Cobalt
+    // missed this URL — see skipCobalt.
+    if (this.skipCobalt) return null
     const errors: string[] = []
     // A self-hosted resolver that self-registers its (possibly rotating) URL is
     // discovered at request time and appended after the static list — so it's

@@ -17,6 +17,12 @@ export type Format = 'video' | 'audio'
 export interface Prefs {
   quality: Quality
   format: Format
+  /**
+   * Preferred caption language for the subtitle picker (BCP-47-ish, as YouTube
+   * uses them: 'en', 'pt-BR', …). Optional — absent until the visitor downloads
+   * their first track — so older stored prefs stay valid untouched.
+   */
+  subtitleLang?: string
 }
 
 /**
@@ -31,6 +37,11 @@ export function isQuality(value: unknown): value is Quality {
 
 export function isFormat(value: unknown): value is Format {
   return value === 'video' || value === 'audio'
+}
+
+/** A language code as YouTube's timed-text API issues them. */
+export function isSubtitleLang(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})?$/.test(value)
 }
 
 /**
@@ -54,14 +65,22 @@ export function normalisePrefs(value: unknown): Prefs | null {
   }
   if (typeof candidate !== 'object' || candidate === null) return null
 
-  const { quality, format } = candidate as { quality?: unknown; format?: unknown }
+  const { quality, format, subtitleLang } = candidate as {
+    quality?: unknown
+    format?: unknown
+    subtitleLang?: unknown
+  }
   if (quality !== undefined && !isQuality(quality)) return null
   if (format !== undefined && !isFormat(format)) return null
 
-  return {
+  const prefs: Prefs = {
     quality: (quality as Quality) ?? DEFAULTS.quality,
     format: (format as Format) ?? DEFAULTS.format,
   }
+  // An absent language is the normal case; a present-but-invalid one is
+  // dropped rather than rejected wholesale — it must not poison quality/format.
+  if (isSubtitleLang(subtitleLang)) prefs.subtitleLang = subtitleLang
+  return prefs
 }
 
 /**

@@ -116,15 +116,20 @@ export const initialState: AppState = {
  *
  * Three cases where it stays shut:
  *
- *   - `generic`. An unrecognised host is the one path where we know nothing
- *     about what comes back, and a poster frame is a full-size still. Painting
- *     one unasked, for a host nothing has vetted, is a real problem for
- *     someone who pasted a link on a train. It is also where the largest files
- *     live.
+ *   - An unknown payload shape (`platform === undefined`). That is an older or
+ *     foreign result we genuinely know nothing about.
  *   - An embed (the YouTube fallback). That iframe is not `preload='none'` and
  *     cannot be: mounting it loads a megabyte of third-party player
  *     immediately, for a visitor who is usually about to click Download.
  *   - Carousels, which have no video to preview — the gallery is the content.
+ *
+ * A `generic` link used to sit in that list too, back when its extractor
+ * returned whatever tag it happened to scrape. It no longer does: the server
+ * only returns a generic downloadUrl after verifying the URL serves media and
+ * not a web page (see verifyStreamReachable), so by the time this decision is
+ * made the one thing worth waiting for — "is this actually a video" — has
+ * already been answered. Staying shut now costs every long-tail site a click
+ * for protection it no longer needs.
  */
 export function autoOpensPreview({
   platform,
@@ -140,9 +145,7 @@ export function autoOpensPreview({
   if (isCarousel) return false
   if (hasEmbed) return false
   if (!hasVideo) return false
-  // `undefined` means an older/unknown payload shape — treated like `generic`,
-  // because the reason to stay shut is precisely not knowing what this is.
-  return platform !== undefined && platform !== 'generic'
+  return platform !== undefined
 }
 
 /**
@@ -163,6 +166,32 @@ const SUCCESS_MARKERS = ['success', '🎉', '🎵', '🎬', '🖼️'] as const
 
 export function isSuccessMessage(message: string): boolean {
   return SUCCESS_MARKERS.some((marker) => message.includes(marker))
+}
+
+/**
+ * True while a link is being resolved or a file is actively transferring —
+ * `state.loading` covers only the former; the latter is three independent
+ * flags because video/audio/images can each be mid-transfer on their own.
+ *
+ * Two readers, which is why it lives here beside `isSuccessMessage` rather
+ * than in the component: the promo slot (which must stay off-screen for the
+ * whole paste-to-download path), and the banner's retry offer. The banner
+ * needs it because its own text cannot say — "Preparing your download…"
+ * carries no success marker, so on message alone it is indistinguishable from
+ * a failure, and a retry is only ever meaningful once nothing is in flight.
+ */
+export function isResolvingOrDownloading(
+  state: Pick<
+    AppState,
+    'loading' | 'downloading' | 'downloadingAudio' | 'downloadingImages'
+  >,
+): boolean {
+  return (
+    state.loading ||
+    state.downloading ||
+    state.downloadingAudio ||
+    state.downloadingImages
+  )
 }
 
 export function appReducer(state: AppState, action: AppAction): AppState {

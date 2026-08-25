@@ -27,7 +27,8 @@ Built with Next.js 16, React 19, TypeScript, Tailwind CSS 4, and Motion by [Moha
 ## Why use it
 
 - **11 platforms, one paste box.** TikTok, X, Instagram, Facebook, YouTube, Pinterest, Reddit, Threads, Snapchat, Twitch, and Vimeo — auto-detected from the URL.
-- **Original quality, HD by default.** The source file rather than a re-encode, with a one-tap fallback to SD, plus MP3 audio extraction on every platform that carries sound.
+- **Any other link too.** Paste a URL from anywhere else and the extractor still goes to work: it reads whatever media the page publishes (og:video, JSON-LD, player configs, download links), with a self-hosted yt-dlp resolver behind it for everything stricter. If the page serves its media to the public, this usually resolves it.
+- **Original quality, HD by default.** The source file rather than a re-encode, with a one-tap fallback to SD, plus MP3 audio extraction wherever a stream resolves — not just on the big-name platforms.
 - **No login, no API key, no daily limit.** Nothing to sign up for and nothing installed unless you want the app.
 - **Private by design.** No account needed to download and no log of what you download — a Google sign-in exists so preferences can sync and so supporters' extras can be attached to an account. Your Recent list lives in your own browser.
 - **Resilient.** A per-platform fallback chain quietly retries other sources, so a single provider outage doesn't break your download.
@@ -95,6 +96,13 @@ Built with Next.js 16, React 19, TypeScript, Tailwind CSS 4, and Motion by [Moha
 
 - Download videos from `vimeo.com/…` and `player.vimeo.com/…` via a dedicated extractor
 
+**Any other site**
+
+- Paste any public link — the generic chain reads the page's own media (og:video, JSON-LD `contentUrl`, `<video>` sources, inline player configs, download anchors), verifies it serves a file rather than an error page, and offers it
+- Sites that wall datacenter IPs are retried at an address they do answer (host-specific recipes read the embed/player page, which usually stays open when the watch page does not); a relay chain and an optional self-hosted yt-dlp resolver (`deploy/resolver/`) sit behind that, but note the free relays now refuse Worker-origin fetches, so on Cloudflare only a configured unlocker or resolver adds anything
+- MP3 extraction works on this long tail too: when no audio-specific source answers, the resolved video stream is re-served through the audio route
+- Where native binaries exist (self-hosting, local dev), a full yt-dlp extractor runs as the final fallback for pages whose players defeat tag-scraping — automatically absent on Cloudflare, where it short-circuits to null
+
 ### App experience
 
 - **Installable PWA** — add to your home screen and launch it like a native app (standalone, own icon, splash).
@@ -102,7 +110,11 @@ Built with Next.js 16, React 19, TypeScript, Tailwind CSS 4, and Motion by [Moha
 - **App shortcuts / jump list** — long-press the installed icon to jump straight to the TikTok, X, Instagram, YouTube, or Facebook downloader.
 - **iOS add-to-home hint** — a quiet, on-brand nudge with the exact "Share → Add to Home Screen" steps, plus an iOS save hint on results.
 - **One-tap paste** — reads the clipboard and resolves the link in a single tap.
-- **Batch paste** — drop a whole list of links (one per line or space-separated); every URL is pulled out, de-duplicated, and resolved in turn with live progress.
+- **Batch paste (supporter)** — drop a whole list of links (one per line or space-separated); every URL is pulled out, de-duplicated, and resolved in turn with live progress, across 1–3 parallel lanes.
+- **Collection import (supporter)** — paste a YouTube `playlist?list=…`, a subreddit or Reddit profile, a Pinterest board, or a Vimeo channel once and it expands into batch rows, capped and de-duplicated, no re-pasting.
+- **Subtitle download (supporter)** — every caption track on a resolved YouTube video saves as an SRT or WebVTT file, manual and auto-generated languages included; your language is remembered and syncs with your account.
+- **Thumbnail save** — the cover image of any result saves as its own file.
+- **Recent export/import** — the local history leaves the device as plain JSON and merges back in on another one (newest wins), staying local-first either way.
 - **Result re-pick** — switch a resolved result between **HD / SD / MP3** without re-pasting; your choice is remembered for the next link.
 - **Recent** — a local, privacy-friendly history of what you've grabbed (branded per-platform tiles, "View all"), stored only in your browser and re-resolvable in one tap. Never stores the short-lived CDN/stream URL.
 

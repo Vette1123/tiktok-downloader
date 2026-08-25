@@ -5,6 +5,7 @@ import { InteractiveBackground } from '@/components/InteractiveBackground'
 import { LazyFAQ } from '@/components/LazyFAQ'
 import {
   FacebookIcon,
+  FilmIcon,
   InstagramIcon,
   PinterestIcon,
   RedditIcon,
@@ -33,6 +34,7 @@ import type { SupportedPlatform } from '@/lib/validator'
  * the build instead of relying on review.
  */
 const OFFER_PLATFORM_BY_SLUG: Record<PlatformSlug, SupportedPlatform> = {
+  'video-downloader': 'generic',
   'tiktok-downloader': 'tiktok',
   'twitter-video-downloader': 'twitter',
   'instagram-downloader': 'instagram',
@@ -54,6 +56,10 @@ const heroChips = [
 ] as const
 
 const platformIcons: Record<PlatformSlug, { Icon: React.ComponentType<{ className?: string }>; tile: string }> = {
+  'video-downloader': {
+    Icon: FilmIcon,
+    tile: 'bg-cyan-600',
+  },
   'tiktok-downloader': {
     Icon: TikTokIcon,
     tile: 'bg-[#010101]',

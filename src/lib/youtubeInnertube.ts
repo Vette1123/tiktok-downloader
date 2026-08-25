@@ -147,19 +147,15 @@ function pickAudio(data: InnertubePlayerResponse): InnertubeFormat | undefined {
 }
 
 /**
- * Resolves a YouTube video through Innertube.
+ * One Innertube player call. Shared by stream extraction and the captions
+ * path, which read different halves of the same response.
  *
- * Returns null — never throws — for every failure the caller should treat as
- * "try the next extractor": a non-OK playability status (private, age-gated,
- * region-blocked, removed), a network error, or a response with no usable
- * stream. Only the caller knows what to fall back to.
+ * Returns null for anything unusable — non-OK playability, network error,
+ * non-200 — so callers treat it as "try the next source", never as a throw.
  */
-export async function tryYouTubeInnertube(
+export async function fetchPlayerResponse(
   videoId: string,
-  canonicalUrl: string,
-  mode: 'auto' | 'audio',
-): Promise<VideoData | null> {
-  let data: InnertubePlayerResponse
+): Promise<InnertubePlayerResponse | null> {
   try {
     const response = await http.post<InnertubePlayerResponse>(
       PLAYER_ENDPOINT,
@@ -182,13 +178,29 @@ export async function tryYouTubeInnertube(
       },
     )
     if (response.status !== 200) return null
-    data = response.data
+    const data = response.data
+    if (data?.playabilityStatus?.status !== 'OK') return null
+    return data
   } catch {
     return null
   }
+}
 
-  const status = data?.playabilityStatus?.status
-  if (status !== 'OK') return null
+/**
+ * Resolves a YouTube video through Innertube.
+ *
+ * Returns null — never throws — for every failure the caller should treat as
+ * "try the next extractor": a non-OK playability status (private, age-gated,
+ * region-blocked, removed), a network error, or a response with no usable
+ * stream. Only the caller knows what to fall back to.
+ */
+export async function tryYouTubeInnertube(
+  videoId: string,
+  canonicalUrl: string,
+  mode: 'auto' | 'audio',
+): Promise<VideoData | null> {
+  const data = await fetchPlayerResponse(videoId)
+  if (!data) return null
 
   const audio = pickAudio(data)
   // Audio mode never needs the video track, so a video with no muxed

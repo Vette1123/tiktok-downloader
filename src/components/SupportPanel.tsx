@@ -103,9 +103,12 @@ export function SupportPanel({ variant = 'full' }: { variant?: 'full' | 'compact
 
       <ul className='space-y-3 lg:col-span-5'>
         {PRO_BENEFITS.map((benefit) => (
-          <li key={benefit} className='flex items-start gap-3'>
+          <li key={benefit.title} className='flex items-start gap-3'>
             <CheckIcon className='mt-0.5 h-4 w-4 shrink-0 text-cyan-300' />
-            <span className='text-sm text-white/75'>{benefit}</span>
+            <span className='text-sm text-white/75'>
+              <strong className='font-semibold text-white'>{benefit.title}.</strong>{' '}
+              {benefit.body}
+            </span>
           </li>
         ))}
       </ul>

@@ -1,6 +1,7 @@
 import { siteConfig } from '@/config/site'
 
 export type PlatformSlug =
+  | 'video-downloader'
   | 'tiktok-downloader'
   | 'twitter-video-downloader'
   | 'instagram-downloader'
@@ -45,6 +46,74 @@ export interface Platform {
 }
 
 export const platforms: Platform[] = [
+  {
+    slug: 'video-downloader',
+    name: 'Any Site',
+    brandLabel: 'Any video downloader',
+    metaTitle: 'Any Video Downloader — Paste Any Link, Save HD MP4 & MP3',
+    metaDescription:
+      'Paste a link from any website and download the video in HD, extract MP3 audio, or save embedded media — free, no login, no app install. TikTok, X, Instagram, YouTube and everything else.',
+    h1: 'Any Video Downloader — Paste Any Link',
+    tagline:
+      'One paste box for every site: resolve the video, the audio, or the images from any public link.',
+    intro:
+      'Paste any public video link — from the eleven dedicated platforms or anywhere else. The extractor reads what the page itself publishes (og:video, JSON-LD, player configs, direct files) and verifies it serves real media before offering it, so what you get is a file that plays rather than an error page renamed .mp4. If a page serves its video to the public, this usually resolves it. No login, nothing installed.',
+    accent: {
+      chip: 'bg-cyan-600 text-white',
+      grad: 'from-cyan-400 via-sky-500 to-blue-600',
+      ring: 'ring-cyan-400/30',
+      glow: 'shadow-cyan-500/30',
+    },
+    urlExamples: [
+      'example.com/videos/any-clip',
+      'site.org/watch/…',
+      'blog.example.com/post-with-video',
+      'any direct .mp4 / .webm link',
+    ],
+    cards: [
+      {
+        title: '🌐 Beyond the big eleven',
+        body: 'Small video hosts, blogs, news sites, forums — if the page publishes its media, the generic extractor finds the best rendition and hands you the file.',
+      },
+      {
+        title: '🛡️ Verified before offered',
+        body: 'Every scraped URL is probed first: it must serve actual media bytes, not an HTML error page. What lands in your downloads folder plays.',
+      },
+      {
+        title: '🎵 MP3 from any resolved link',
+        body: 'Wherever the video resolves, the soundtrack comes with it — extract audio as MP3 even on platforms without a dedicated downloader.',
+      },
+    ],
+    faqs: [
+      {
+        q: 'Does this work with any website?',
+        a: 'It works wherever a page serves its media publicly. Dedicated support covers TikTok, X, Instagram, Facebook, YouTube, Pinterest, Reddit, Threads, Snapchat, Twitch and Vimeo; beyond those, the extractor reads whatever the page publishes, which resolves most smaller video hosts, blogs and news pages.',
+      },
+      {
+        q: 'What if a site blocks automated access?',
+        a: 'Some hosts serve a block page instead of the real markup to datacenter IPs. Those links are retried at an address the site does answer — an embed or player page usually stays open when the watch page does not — and when neither works, the error says the host blocked us rather than guessing at some other cause.',
+      },
+      {
+        q: 'Can I download from sites that require a login?',
+        a: 'No. Only what a logged-out visitor can already see is reachable — private accounts, paywalls and DRM streams are out of reach by design.',
+      },
+      {
+        q: 'How do I get the best quality from a random site?',
+        a: 'Leave quality on HD. When a page offers several renditions, the extractor ranks them by resolution and picks the highest verified one rather than trusting whichever URL appears first.',
+      },
+      {
+        q: 'Why did my link fail?',
+        a: 'The three common reasons: the media is login-gated, the page never exposes a direct file (it streams through an obfuscated player), or the host blocks automated fetches entirely. The error message tells you which one it was.',
+      },
+    ],
+    featureList: [
+      'Download videos from any public web page, not just major platforms',
+      'Reads og:video, JSON-LD contentUrl, <video> sources and player configs',
+      'Ranks multiple renditions by resolution and picks the best verified one',
+      'MP3 extraction on every link that resolves as video',
+      'Host-specific recipes that read an embed page when the watch page is walled',
+    ],
+  },
   {
     slug: 'tiktok-downloader',
     name: 'TikTok',
@@ -287,6 +356,10 @@ export const platforms: Platform[] = [
         title: '⚡ Shorts ready',
         body: 'Vertical YouTube Shorts (/shorts/…) are first-class citizens — saved in their native 9:16 aspect ratio at source resolution.',
       },
+      {
+        title: '📚 Whole playlists, one paste',
+        body: 'Supporters can paste a playlist?list=… link and it expands into individual videos automatically — de-duplicated and queued in order.',
+      },
     ],
     faqs: [
       {
@@ -308,6 +381,10 @@ export const platforms: Platform[] = [
       {
         q: 'Why does my video only load as a preview?',
         a: 'Some YouTube videos restrict free extraction. In that case the tool falls back to an embedded preview so you can still watch it inline.',
+      },
+      {
+        q: 'Can I import a whole YouTube playlist?',
+        a: 'Yes. Supporters paste the playlist link once; every video becomes its own row in the download queue with real titles, capped per run. The queue is one of the supporter extras — downloading videos one link at a time is free and unlimited for everyone.',
       },
     ],
     featureList: [
@@ -423,6 +500,10 @@ export const platforms: Platform[] = [
         title: '🔗 pin.it short links',
         body: 'Short pin.it URLs work the same as full pinterest.com links — the tool resolves the short link to the underlying pin automatically.',
       },
+      {
+        title: '📚 Download a whole board',
+        body: 'A board link expands into its pins through the board’s public feed — every pin becomes a row you can resolve in one run.',
+      },
     ],
     faqs: [
       {
@@ -444,6 +525,10 @@ export const platforms: Platform[] = [
       {
         q: 'Why does my Pinterest link fail to process?',
         a: 'Make sure the pin is public and the URL is a pin link (pinterest.com/pin/… or pin.it/…). Some pins only link out to an external site and carry no downloadable media.',
+      },
+      {
+        q: 'Can I back up an entire Pinterest board?',
+        a: 'Yes. Supporters paste the board link and each pin becomes its own queue row via the board’s public RSS feed, so images and videos resolve together without copying links one at a time.',
       },
     ],
     featureList: [
@@ -491,6 +576,10 @@ export const platforms: Platform[] = [
         title: '🔗 Every Reddit link',
         body: 'Full comment permalinks, /s/ share links, and bare v.redd.it / redd.it short URLs are all supported — paste any of them.',
       },
+      {
+        title: '📚 Import whole subreddits',
+        body: 'Paste a subreddit or user page and the media posts become queue rows — videos and images only, pinned mod posts skipped.',
+      },
     ],
     faqs: [
       {
@@ -512,6 +601,10 @@ export const platforms: Platform[] = [
       {
         q: 'Do I need to log in to Reddit?',
         a: 'No. Only publicly visible posts are accessed — no login, no app, no extension.',
+      },
+      {
+        q: 'Can I save every post from a subreddit or user?',
+        a: 'Yes — supporters paste the subreddit or profile link and it expands into individual post links (media posts only), then resolves them as a queue. Text-only posts are filtered out rather than failing one by one.',
       },
     ],
     featureList: [
@@ -763,6 +856,10 @@ export const platforms: Platform[] = [
         title: '🎚️ Quality aware',
         body: 'Choose HD for the best rendition or Data saver for a lighter file — the tool picks the matching progressive source.',
       },
+      {
+        title: '📚 Channels & users in one run',
+        body: 'A Vimeo channel or user link expands into their public videos through the feed — queue them all instead of pasting one by one.',
+      },
     ],
     faqs: [
       {
@@ -784,6 +881,10 @@ export const platforms: Platform[] = [
       {
         q: 'Why does my Vimeo link fail to process?',
         a: 'Make sure the video is public and the URL is a vimeo.com/<id> link. Private, password-protected, or unlisted-with-restrictions videos can’t be fetched.',
+      },
+      {
+        q: 'Can I grab everything from a Vimeo channel?',
+        a: 'Yes — supporters paste the channel or user link, the public video feed expands into rows, and the batch queue resolves each one at the quality you prefer.',
       },
     ],
     featureList: [

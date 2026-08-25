@@ -44,6 +44,18 @@ export const homepageFaqs: HomepageFaq[] = [
     a: 'Yes. It runs entirely in the browser on any modern device — iPhone, iPad, Android phone, tablet, Mac, Windows or Linux. No app install required.',
   },
   {
+    q: 'Does it work with sites other than the eleven platforms?',
+    a: 'Yes — paste any public video link and the app will try to resolve it. Dedicated support covers TikTok, X, Instagram, Facebook, YouTube, Pinterest, Reddit, Threads, Snapchat, Twitch and Vimeo; beyond those, the extractor reads whatever media the page publishes, so links from smaller video hosts, blogs and news sites usually resolve too. Sites that require a login or hide their media cannot be fetched.',
+  },
+  {
+    q: 'Can I import a whole playlist or collection at once?',
+    a: 'Yes. Supporters can paste a YouTube playlist, a Reddit subreddit or user page, a Pinterest board, or a Vimeo channel into the batch queue and it expands into individual links automatically — de-duplicated and capped per run — then resolves them as a queue. The batch queue itself is one of the supporter extras; downloading links one at a time stays free, unlimited, and needs no account.',
+  },
+  {
+    q: 'Can I save subtitles along with a video?',
+    a: 'YouTube subtitle tracks — including auto-generated ones — can be saved as standard SRT or WebVTT files that play in VLC or load into editors. That is part of the supporter extras; the video and audio downloads themselves stay free either way.',
+  },
+  {
     q: 'What formats and quality are downloads available in?',
     a: 'Videos are downloaded as MP4 in HD (typically 1080p when the source supports it). Audio is delivered as MP3. Carousel images are saved as JPG or PNG, individually or in a ZIP archive.',
   },

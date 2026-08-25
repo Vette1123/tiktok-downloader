@@ -8,6 +8,7 @@ import { SupportPanel } from '@/components/SupportPanel'
 import { PromoSlot } from '@/components/PromoSlot'
 import {
   FacebookIcon,
+  FilmIcon,
   InstagramIcon,
   PinterestIcon,
   RedditIcon,
@@ -23,6 +24,7 @@ import { DevAppLinks } from '@/components/DevAppLinks'
 import { SiteFooter } from '@/components/SiteFooter'
 import { homepageFaqs } from '@/lib/homepageFaqs'
 import { platforms } from '@/lib/platforms'
+import { WHATS_NEW } from '@/config/whatsNew'
 import { homepageStructuredData } from '@/lib/structuredData'
 
 const heroChips = [
@@ -30,13 +32,14 @@ const heroChips = [
   'No login to download',
   'No download limits',
   'HD quality',
+  'Any public link',
 ] as const
 
 const howItWorksSteps = [
   {
     n: 1,
     title: 'Copy a video URL',
-    sub: 'From TikTok, X, Instagram, Facebook, or YouTube.',
+    sub: 'TikTok, X, Instagram, YouTube — or any public video link.',
   },
   {
     n: 2,
@@ -114,6 +117,7 @@ const platformLinkTiles: Record<
   string,
   { tile: string; Icon: React.ComponentType<{ className?: string }> }
 > = {
+  'video-downloader': { tile: 'bg-cyan-600', Icon: FilmIcon },
   'tiktok-downloader': { tile: 'bg-[#010101]', Icon: TikTokIcon },
   'twitter-video-downloader': { tile: 'bg-black', Icon: TwitterXIcon },
   'instagram-downloader': { tile: 'bg-transparent', Icon: InstagramIcon },
@@ -259,17 +263,33 @@ export default function Home() {
             {/* Interactive island — paste bar + results */}
             <DownloaderApp />
 
-            {/* Reassurance chips */}
+            {/* Reassurance chips. "Any public link" is the one chip that is
+                also a link: it names the universal downloader page, which is
+                both where a curious visitor goes next and an internal link to
+                it from every page that shows this hero. */}
             <div className='mt-7 flex flex-wrap justify-center gap-2'>
-              {heroChips.map((chip) => (
-                <span
-                  key={chip}
-                  className='inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3.5 py-1.5 text-xs text-white/70 md:text-sm'
-                >
-                  <span className='h-1.5 w-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.6)]' />
-                  {chip}
-                </span>
-              ))}
+              {heroChips.map((chip) => {
+                const inner = (
+                  <>
+                    <span className='h-1.5 w-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.6)]' />
+                    {chip}
+                  </>
+                )
+                const cls =
+                  'inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3.5 py-1.5 text-xs text-white/70 transition-colors hover:text-white md:text-sm'
+                if (chip !== 'Any public link') {
+                  return (
+                    <span key={chip} className={cls}>
+                      {inner}
+                    </span>
+                  )
+                }
+                return (
+                  <Link key={chip} href='/video-downloader' className={cls}>
+                    {inner}
+                  </Link>
+                )
+              })}
             </div>
 
             {/* Dev / companion-app links */}
@@ -449,6 +469,38 @@ export default function Home() {
               <LazyFAQ items={homepageFaqs} />
             </div>
           </section>
+
+          {/* ---------------------------------------------------------------
+              WHAT'S NEW — proof of life, four lines, newest first. Config-fed
+              (src/config/whatsNew.ts) and pruned rather than accumulated, so
+              it never becomes a wall nobody reads.
+          ---------------------------------------------------------------- */}
+          {WHATS_NEW.length > 0 && (
+            <section className='mt-16 sm:mt-24'>
+              <SectionHead
+                title='Recently added'
+                sub='The tool is under active development — here is what changed lately.'
+              />
+              <ol className='mx-auto grid max-w-3xl gap-2.5'>
+                {WHATS_NEW.map((item) => (
+                  // <li> rather than the Surface directly: an <ol> may only
+                  // contain list items, and a dated changelog is exactly the
+                  // ordered list a screen reader should announce as one.
+                  <li key={item.title}>
+                    <Surface className='flex items-start gap-3 p-4'>
+                      <span className='shrink-0 rounded-md border border-cyan-400/25 bg-cyan-400/10 px-2 py-0.5 text-[11px] font-medium text-cyan-300'>
+                        {item.date}
+                      </span>
+                      <span className='min-w-0 text-sm text-white/70'>
+                        <strong className='font-semibold text-white'>{item.title}.</strong>{' '}
+                        {item.detail}
+                      </span>
+                    </Surface>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
           </main>
 
           <SiteFooter />
