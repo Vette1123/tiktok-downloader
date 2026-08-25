@@ -240,54 +240,19 @@ function stringAtPath(value: unknown, keys: readonly string[]): string {
 }
 
 function isXiaohongshuImagePost(value: unknown): boolean {
-  if (!value || typeof value !== 'object') return false
-
-  const seen = new Set<unknown>()
   const walk = (current: unknown): boolean => {
-    if (seen.has(current)) return false
-    if (current && typeof current === 'object') seen.add(current)
-
-    if (current && typeof current === 'object' && !Array.isArray(current)) {
-      const record = current as Record<string, unknown>
-      for (const key of [
-        'type',
-        'media_type',
-        'mediaType',
-        'note_type',
-        'noteType',
-        'content_type',
-        'contentType',
-      ]) {
-        const kind = text(record[key]).toLowerCase()
-        if (/^(?:image|images|photo|picture|图文|图片|静态图)$/.test(kind)) {
-          return true
-        }
-      }
-
-      // IF-PHP has returned the note kind at different nesting levels. It
-      // also sometimes omits the kind and exposes only an image collection.
-      // An image collection is stronger evidence than a generic `url` field;
-      // a video's `cover`/`thumbnail` is deliberately not included here.
-      for (const [key, child] of Object.entries(record)) {
-        if (
-          /^(?:images?|image_list|imageList|photo_list|photoList|pics?|img)$/i.test(
-            key,
-          ) &&
-          (Array.isArray(child) || /^https?:\/\//i.test(text(child)))
-        ) {
-          return true
-        }
-        if (walk(child)) return true
-      }
-      return false
-    }
-
-    if (Array.isArray(current)) {
-      return current.some((item) => walk(item))
-    }
-    return false
+    if (!current || typeof current !== 'object') return false
+    if (Array.isArray(current)) return current.some(walk)
+    return Object.entries(current as Record<string, unknown>).some(([key, child]) => {
+      const kind = text(child).toLowerCase()
+      return (
+        /^(?:image|images|photo|picture|图文|图片|静态图)$/.test(kind) ||
+        (/^(?:images?|image_list|imageList|photo_list|photoList|pics?|img)$/i.test(key) &&
+          (Array.isArray(child) || /^https?:\/\//i.test(kind))) ||
+        walk(child)
+      )
+    })
   }
-
   return walk(value)
 }
 
