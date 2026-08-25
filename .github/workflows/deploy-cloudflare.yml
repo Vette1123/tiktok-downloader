@@ -50,6 +50,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Parser fixtures and route behaviour must pass before a build can be
+      # considered usable. This is especially important for the Chinese
+      # platform adapters, whose upstream response shapes change frequently.
+      - name: Run unit tests
+        run: pnpm test
+
       # No separate typecheck or lint step on purpose.
       #
       # `next build` type-checks the project itself (nothing sets
