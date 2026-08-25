@@ -32,6 +32,10 @@ import { htmlScrapingAvailable, nativeMediaAvailable } from './nativeMedia'
 import { getMediaReferer } from './proxyHeaders'
 import { tryYouTubeInnertube } from './youtubeInnertube'
 import { ytdlpInfo } from './ytdlp'
+import {
+  resolveChinesePlatform,
+  type ChinesePlatform,
+} from './chinaPlatforms'
 
 // Retry a flaky network op with exponential backoff + light jitter. Only retries
 // errors the caller marks retryable (429 / 5xx / timeouts) — a hard 404/private
@@ -778,6 +782,11 @@ export class Downloader {
     'https://co.otomir23.me/',
     'https://rue-cobalt.xenon.zone/',
     'https://cobaltapi.cjs.nz/',
+    // Community endpoint verified by the fork owner. It is deliberately last:
+    // it is useful for Instagram/Xiaohongshu picker results, but has shown
+    // intermittent failures and should remain a fallback rather than the
+    // primary dependency.
+    'https://api.co.rooot.gay/',
   ]
 
   private get cobaltInstances(): string[] {
@@ -904,6 +913,34 @@ export class Downloader {
       return this.downloadAudio(url, platform)
     }
 
+    const chinesePlatforms: ChinesePlatform[] = [
+      'douyin',
+      'kuaishou',
+      'bilibili',
+      'xiaohongshu',
+    ]
+    if (chinesePlatforms.includes(platform as ChinesePlatform)) {
+      try {
+        const direct = await resolveChinesePlatform(
+          url,
+          platform as ChinesePlatform,
+          this.videoQuality,
+        )
+        if (direct) return direct
+      } catch (error) {
+        console.warn(`${platform} direct resolver failed, trying Cobalt`, error)
+      }
+
+      // Cobalt does not guarantee support for every Chinese platform, but a
+      // configured/private instance may support more than the public list. It
+      // also remains a useful last resort for Xiaohongshu image pickers.
+      const fallback = await this.tryCobaltInstances(url)
+      if (fallback) return fallback
+      throw new Error(
+        `${platform} 解析失败。请确认作品公开可访问；抖音受风控时还需要在 Worker 中配置 IFPHP_API_KEY。`,
+      )
+    }
+
     if (platform === 'tiktok') {
       return this.downloadTikTok(url)
     }
@@ -955,7 +992,7 @@ export class Downloader {
     }
 
     throw new Error(
-      'Unsupported URL. Please paste a link from a supported platform (TikTok, X, Instagram, Facebook, YouTube, Pinterest, Reddit, Threads, Snapchat, Twitch, or Vimeo).',
+      'Unsupported URL. Please paste a link from Douyin, Kuaishou, Bilibili, Xiaohongshu, TikTok, X, Instagram, Facebook, YouTube, Pinterest, Reddit, Threads, Snapchat, Twitch, or Vimeo.',
     )
   }
 

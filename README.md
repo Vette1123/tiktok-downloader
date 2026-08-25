@@ -1,516 +1,179 @@
-# Social Media Downloader
+# 社交媒体解析下载器（中国平台增强版）
 
-> Download public TikTok, Twitter/X, Instagram, Facebook, YouTube, Pinterest, Reddit, Threads, Snapchat, Twitch & Vimeo posts in their original quality — HD video, reels, Shorts, MP3 audio, photo carousels, and ffmpeg-rendered slideshow MP4s. Free, no login, no limits. Installs as an app.
+这是基于 [Vette1123/social-media-downloader](https://github.com/Vette1123/social-media-downloader) 的 Cloudflare Workers 分支。保留原项目对海外平台的解析能力，并新增抖音、快手、小红书和哔哩哔哩支持。
 
-![Social Media Downloader — download HD video, reels, Shorts, MP3 audio and photos from public posts on TikTok, X, Instagram, Facebook, YouTube and more](docs/social-preview.png)
+项目只负责解析公开作品并返回媒体直链或代理地址。实际文件由浏览器、手机或 NAS 下载，Worker 不会把整段视频保存到服务器。
 
-[![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js&logoColor=white)](https://nextjs.org)
-[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
-[![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
-[![PWA](https://img.shields.io/badge/PWA-installable-5A0FC8?logo=pwa&logoColor=white)](https://web.dev/progressive-web-apps/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy_Me_A_Coffee-support-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/vetteotp)
+## 支持的平台
 
-### 🚀 [Try it live →](https://www.socialdownloader.space)
+| 平台 | 解析方式 | 是否需要 Cookie | 说明 |
+| --- | --- | --- | --- |
+| 抖音 | 分享页 → IF-PHP API → Cobalt 回退 | 否 | Cloudflare 数据中心经常拿不到抖音媒体数据，建议配置 `IFPHP_API_KEY` |
+| 快手 | 移动分享页直解析 → IF-PHP API → Cobalt 回退 | 否 | 支持完整分享文案和短链接 |
+| 小红书 | 分享页直解析 → IF-PHP 聚合 API → Cobalt 回退 | 否 | 风控页面可能需要后两种回退方式 |
+| 哔哩哔哩 | B站公开接口 | 否 | 返回单文件 MP4，避免 Worker 无法合并 DASH 音视频的问题 |
+| TikTok、X、Instagram、Facebook、YouTube 等 | 继承原项目解析链 | 否 | 仅支持公开可访问内容 |
 
-A free downloader for public posts on **TikTok, Twitter/X, Instagram, Facebook, YouTube, Pinterest, Reddit, Threads, Snapchat, Twitch, and Vimeo**. Paste a link and get an HD video, reel, or Short, MP3 audio, a photo carousel (individual images or a ZIP), or a fully rendered slideshow MP4 with the original soundtrack — no login, no install required, runs in your browser. It reaches only what a logged-out visitor can already see: no private accounts, no paywalled or subscriber-only posts, no DRM.
+> 私密作品、好友可见作品、付费内容、DRM 内容以及登录后才能访问的内容不在支持范围内。
 
-It's also an **installable app (PWA)**: add it to your home screen and share links straight from the TikTok, Instagram, or YouTube app — no browser, no copy-paste.
+## 中国平台解析流程
 
-Open source, with **no popups, no redirects, no tracking, and a multi-source fallback chain** so downloads keep working when any single provider goes down.
+1. 从用户粘贴的完整分享文案中提取第一个 HTTP(S) 链接。
+2. 自动识别平台。
+3. 优先请求平台公开页面或公开接口。
+4. 直接解析失败时，使用配置了 Key 的 IF-PHP API。
+5. 仍然失败时，尝试 Cobalt 公共/自建实例。
+6. 返回媒体直链；前端通过带正确 `Referer` 的同源代理进行预览和下载。
 
-⭐ **If this tool is useful to you, please [star the repo](https://github.com/Vette1123/social-media-downloader/stargazers)** — it helps others find it.
+IF-PHP Key 只会通过 `X-API-Key` 请求头发送给 `api-new.ifphp.com`，不会写进链接、前端代码或日志。
 
-Built with Next.js 16, React 19, TypeScript, Tailwind CSS 4, and Motion by [Mohamed Gado](https://www.mohamedgado.com).
+## 一键部署到 Cloudflare Workers
 
-## Why use it
+### 1. Fork 仓库
 
-- **11 platforms, one paste box.** TikTok, X, Instagram, Facebook, YouTube, Pinterest, Reddit, Threads, Snapchat, Twitch, and Vimeo — auto-detected from the URL.
-- **Original quality, HD by default.** The source file rather than a re-encode, with a one-tap fallback to SD, plus MP3 audio extraction on every platform that carries sound.
-- **No login, no API key, no daily limit.** Nothing to sign up for and nothing installed unless you want the app.
-- **Private by design.** No account needed to download and no log of what you download — a Google sign-in exists so preferences can sync and so supporters' extras can be attached to an account. Your Recent list lives in your own browser.
-- **Resilient.** A per-platform fallback chain quietly retries other sources, so a single provider outage doesn't break your download.
-- **Installable PWA.** Home-screen icon, app shortcuts, and native share-in from other apps.
+在 GitHub 中 Fork 本仓库，然后打开 Fork 后仓库的设置。
 
-## Features
+### 2. 创建 Cloudflare API Token
 
-### Platforms
+在 Cloudflare 控制台创建有 Workers 编辑权限的 API Token，并记下：
 
-**TikTok**
+- Cloudflare Account ID
+- Cloudflare API Token
 
-- HD video downloads at the source quality
-- Extract the soundtrack as MP3 (re-served with `audio/mpeg`)
-- Photo carousels (slideshows): preview every image, save individually or as a ZIP, keep the original background music
-- Render a TikTok slideshow into a real MP4 video (ffmpeg) when the platform only ships images
+### 3. 配置 GitHub Actions Secrets
 
-**Twitter / X**
+进入：
 
-- Native video and GIF extraction from any `twitter.com` or `x.com` status URL
-- Resolves `t.co` short links
+`Settings → Secrets and variables → Actions → Secrets`
 
-**Instagram**
+添加：
 
-- Download reels and feed videos in their original quality
-- Save single-photo posts and multi-image carousels — individually or as a ZIP
-- Extract the audio track from a reel as MP3
-- Works with `instagram.com/p/…`, `/reel/…`, `/tv/…` and share links — no login required
-- Posts Instagram will not serve logged-out (private, age- or region-restricted) need `IG_SESSIONID` *and* the `ig` grant, and are the only Instagram links that fail
+| 名称 | 内容 |
+| --- | --- |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare Account ID |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API Token |
 
-**YouTube**
+### 4. 配置站点地址
 
-- Download videos and Shorts in HD as MP4
-- Extract the audio track as MP3
-- Rich metadata (title, channel, thumbnail) pulled from YouTube's public oEmbed
-- Works with `youtube.com/watch?v=…`, `youtu.be/…`, `/shorts/…`, and `/embed/…`
+进入：
 
-**Facebook**
+`Settings → Secrets and variables → Actions → Variables`
 
-- Download public videos, watch clips, and reels in HD
-- Extract the audio track as MP3
-- Resolves `fb.watch/…` short links and `/share/…` links automatically
-- Works with `facebook.com/…/videos/…`, `facebook.com/watch/?v=…`, and `facebook.com/reel/…`
+添加：
 
-**Pinterest**
+| 名称 | 示例 |
+| --- | --- |
+| `NEXT_PUBLIC_SITE_URL` | `https://social-media-downloader-cn.你的子域.workers.dev` |
 
-- Download Pin videos and images from `pinterest.com/pin/…` (and `pin.it` short links)
+第一次不知道最终地址时可以先部署，部署完成后把实际地址填入变量，再重新运行工作流。
 
-**Reddit**
+### 5. 运行部署工作流
 
-- Download videos from `reddit.com/r/…/comments/…` posts and `/s/…` share links
+推送到 `main` 后会自动部署。也可以进入 `Actions → Deploy to Cloudflare Workers → Run workflow` 手动执行。
 
-**Threads**
+Pull Request 只进行构建和检查，不会覆盖线上 Worker。
 
-- Download videos and images from `threads.net` / `threads.com` posts
+## 配置 IF-PHP API Key
 
-**Snapchat**
+抖音在 Cloudflare 数据中心环境中经常无法仅靠公开页面解析，因此建议配置你自己的 IF-PHP Key。
 
-- Download Spotlight clips and public story/profile media
+可在 Cloudflare 控制台中操作：
 
-**Twitch**
+`Workers & Pages → social-media-downloader-cn → Settings → Variables and Secrets`
 
-- Download clips and VODs from `twitch.tv/…/clip/…`, `clips.twitch.tv/…`, and `twitch.tv/videos/…`
+添加加密 Secret：
 
-**Vimeo**
+```text
+名称：IFPHP_API_KEY
+值：你的 API Key
+```
 
-- Download videos from `vimeo.com/…` and `player.vimeo.com/…` via a dedicated extractor
-
-### App experience
-
-- **Installable PWA** — add to your home screen and launch it like a native app (standalone, own icon, splash).
-- **Share Target (Android)** — installing registers the app as a share destination, so you can hit **Share → Social Downloader** from inside TikTok/Instagram/YouTube and land straight on a resolved download. No browser, no paste.
-- **App shortcuts / jump list** — long-press the installed icon to jump straight to the TikTok, X, Instagram, YouTube, or Facebook downloader.
-- **iOS add-to-home hint** — a quiet, on-brand nudge with the exact "Share → Add to Home Screen" steps, plus an iOS save hint on results.
-- **One-tap paste** — reads the clipboard and resolves the link in a single tap.
-- **Batch paste** — drop a whole list of links (one per line or space-separated); every URL is pulled out, de-duplicated, and resolved in turn with live progress.
-- **Result re-pick** — switch a resolved result between **HD / SD / MP3** without re-pasting; your choice is remembered for the next link.
-- **Recent** — a local, privacy-friendly history of what you've grabbed (branded per-platform tiles, "View all"), stored only in your browser and re-resolvable in one tap. Never stores the short-lived CDN/stream URL.
-
-### Quality of life
-
-- Inline video and image previews before downloading
-- Multi-source fallback chain per platform (resilient against any single provider going down)
-- Warm-instance resolve cache and direct tunnel downloads for faster, lighter fetches
-- CORS-proxied media routes so downloads (and Instagram's hotlink-protected CDN) work cross-origin, with HTTP range support for seek/preview
-- Inline URL validation, smooth motion animations, fully responsive layout, low-power/touch-aware effects
-- Eleven dedicated, SEO-tuned landing pages (one per platform)
-- Production-grade SEO: dynamic OpenGraph and Twitter card images, per-platform OG images, JSON-LD (WebSite, Person, SoftwareApplication, HowTo, FAQPage), hreflang, sitemap, IndexNow ping on build, and a PWA-tuned manifest
-- No registration, no API keys, no daily limit
-
-## Supporting the project
-
-The site is free and stays free. It is paid for by a single sponsor card shown
-after a download — no popups, no redirects, no interstitials, and no tracking of
-what you download.
-
-Nothing here is for sale. A subscription existed briefly and was withdrawn: two
-merchants of record refused to underwrite a third-party downloader, the second
-after every fixable item on their published review checklist had been fixed, so
-the rejection was about the product category and not the paperwork. Supporting
-the project is a donation, and supporters get the extras switched on by hand —
-see [the support page](https://www.socialdownloader.space/pro).
-
-<a href="https://buymeacoffee.com/vetteotp">
-  <img src="https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&emoji=&slug=vetteotp&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff" alt="Buy me a coffee" height="48" />
-</a>
-
-## Tech stack
-
-| Layer            | Technology                          |
-| ---------------- | ----------------------------------- |
-| Framework        | Next.js 16 (App Router), React 19   |
-| Language         | TypeScript 6                        |
-| Styling          | Tailwind CSS 4                      |
-| Animation        | Motion (formerly framer-motion) 12  |
-| UI primitives    | Radix Accordion, `clsx`             |
-| Icons            | Hand-rolled SVG (`src/components/icons.tsx`) |
-| Hosting          | Cloudflare Workers — static export + a hand-written Worker for `/api/*` |
-| Accounts         | Google OAuth (PKCE, no SDK) + Cloudflare D1 |
-| Entitlements     | Hand-set grants in D1 + signed short-lived tokens |
-| HTTP             | Native `fetch` (`src/lib/httpClient.ts`) |
-| HTML scraping    | Regex extractors (`src/lib/htmlExtract.ts`) |
-| ZIP bundling     | JSZip, lazily imported **in the browser** |
-| Slideshow video  | fluent-ffmpeg + @ffmpeg-installer *(Node hosts only)* |
-| YouTube fallback | youtube-dl-exec *(Node hosts only)* |
-| Dynamic OG       | `next/og`, prerendered to PNG at build time |
-| App shell        | PWA manifest + Share Target + shortcuts |
-
-Four of these are *deliberate removals* rather than choices never made: **Axios**
-(~half the CPU of `/api/download` — see `src/lib/httpClient.ts`), **Cheerio**
-(too slow for the Worker CPU budget), **lucide-react** (three icons, hand-copied
-paths), and **arctic** (41% of the Worker bundle to reach one OAuth provider).
-Nothing in the deployed Worker comes from `node_modules` any more. Adding a
-dependency that the Worker imports is a CPU decision — run `pnpm cf:startup`.
-
-## Getting started
-
-**Prerequisites:** Node.js 20+ (24 LTS recommended), pnpm.
+也可以在本地登录 Wrangler 后执行：
 
 ```bash
-git clone https://github.com/Vette1123/social-media-downloader.git
-cd social-media-downloader
-pnpm install
+pnpm exec wrangler secret put IFPHP_API_KEY
+```
+
+可选配置：
+
+| 变量 | 默认值 | 用途 |
+| --- | --- | --- |
+| `IFPHP_API_BASE` | `https://api-new.ifphp.com/api` | 自定义兼容 API 地址 |
+| `COBALT_API_URL` | 空 | 一个或多个自建 Cobalt 地址，使用逗号或空格分隔 |
+| `COBALT_API_KEY` | 空 | 自建 Cobalt 的访问 Key |
+| `CANONICAL_ORIGIN` | 空 | 配置自定义域名后，让 workers.dev 跳转到自定义域名 |
+
+不设置 `CANONICAL_ORIGIN` 时，workers.dev 地址会直接提供服务，不会像上游项目那样跳转到原作者网站。
+
+## 本地开发
+
+要求：
+
+- Node.js 22 或更高版本
+- pnpm（版本以 `package.json` 为准）
+
+安装并运行：
+
+```bash
+pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Open <http://localhost:3000>.
-
-Build for production:
+运行测试：
 
 ```bash
-pnpm build && pnpm start
+pnpm test
+pnpm exec tsc --noEmit
 ```
 
-### Environment variables
-
-All optional — the app runs without any config. Signing in and Pro billing are
-themselves optional: without the accounts/billing variables below, the site
-still works as a fully anonymous, free downloader; sign-in simply is not
-offered.
-
-They all live in one gitignored `.env`, copied from `.env.sample`. Next reads it
-for `next dev` and `next build`, wrangler reads it for `wrangler dev`, and
-`pnpm cf:setup secrets` uploads the deploy-relevant half to the Worker — so a
-value is set once rather than kept in step across three files. Do not add a
-`.dev.vars`: wrangler prefers that file and then ignores `.env` entirely.
-
-| Variable              | Purpose                                                                          |
-| --------------------- | -------------------------------------------------------------------------------- |
-| `NEXT_PUBLIC_SITE_URL`| Canonical site URL used for metadata, sitemap, and OG images.                    |
-| `COBALT_API_URL`      | Self-hosted [Cobalt](https://github.com/imputnet/cobalt) instance to harden the extraction fallback chain. |
-| `IG_SESSIONID`        | Instagram session cookie from a burner account. Public posts resolve without it. Setting it is **not** sufficient on its own: a request also needs the `ig` grant on its user row, so an unlisted visitor never carries the cookie. Never sold, never bundled with the supporter grant — see below. |
-| `NEXT_PUBLIC_CF_BEACON_TOKEN` | Enables Cloudflare Web Analytics by injecting the beacon script at build time. Build-time only, like `NEXT_PUBLIC_SITE_URL` — set it as build env, not a Worker var. If Web Analytics is already enabled at the zone level in the Cloudflare dashboard, Cloudflare injects the beacon at the edge automatically; setting this too would load it twice and double-count page views. Pick one mechanism. |
-| `PRO_TOKEN_SECRET`    | HMAC key (WebCrypto HMAC-SHA256) for signing Pro access tokens and session-cookie values. Generate 32+ random bytes yourself. |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth client used for sign-in. Created in Google Cloud console; both the dev and production redirect URIs must be registered on it. Replacing the client with one from a *different* Google Cloud project changes every existing user's `sub`, since a `sub` identifies a person within a project rather than globally — `handleAuthCallback` re-keys the row by verified email so accounts survive the move, and the consent screen on the new project must be published (a project left in Testing admits only its listed test users). |
-| `CREEM_API_KEY` | Dormant. Mints a customer-portal URL per click for any subscription that predates the withdrawal, and backs the lazy reconcile. Nothing creates subscriptions any more. |
-| `CREEM_WEBHOOK_SECRET` | Dormant, and still never optional while the endpoint is registered: an unverified webhook endpoint would let anyone grant themselves the extras. |
-| `BMC_WEBHOOK_SECRET` | Signing secret for the Buy Me a Coffee webhook, one per endpoint, from its dashboard. Without it `/api/billing/bmc` answers 503 and grants nothing. Setup and payload notes: `docs/buymeacoffee-setup.md`. |
-
-### Accounts and grants
-
-Nothing is sold. A $3/month subscription existed for two days in August 2026 and
-was withdrawn — see *Supporting the project* above. The features it covered are
-still here and are now granted by hand.
-
-Signing in is with a Google account, entitlement is a signed short-lived access
-token, and preferences (HD/SD, video/audio) sync across devices for anyone
-signed in. Signing in never changes what is free.
-
-**Grants.** The `users.grants` column holds a comma-separated set, set and
-cleared with one command:
+本地预览 Cloudflare Worker：
 
 ```bash
-pnpm exec wrangler d1 execute social-media-downloader --remote \
-  --command "UPDATE users SET grants = 'pro' WHERE email = 'someone@example.com'"
+pnpm preview
 ```
 
-It takes effect within one access-token TTL (15 minutes), with no deploy. Note
-that this command *assigns* the column rather than adding to it, so running it
-on an account that also holds `ig` silently drops that. The Buy Me a Coffee
-webhook (`/api/billing/bmc`) adds and removes single names instead and is the
-normal path now — `docs/buymeacoffee-setup.md`. It records support against an
-email address in `supporters` whether or not an account exists yet, and the
-grant is applied when that address signs in. One Buy Me a Coffee account serves
-several projects, so support is tied to a project by the name of the thing
-bought: this site recognises the `Downloader — Supporter` membership and the
-`Downloader — Lifetime` extra (`src/config/support.ts`) and ignores everything
-else sold on the account. A plain one-off coffee carries no name to match and
-grants nothing automatically; it is handled by hand as an expiring window rather
-than as a `pro` grant, which has no expiry.
+## API 使用示例
 
-Two names are defined, and keeping them separate is the point:
+请求：
 
-| Grant | What it does |
-| ----- | ------------ |
-| `pro` | The batch queue, ZIP bundling, priority resolve, no sponsor card. What a supporter gets. |
-| `ig`  | Attaches `IG_SESSIONID` to that account's Instagram resolves. Operator only. |
+```http
+POST /api/download
+Content-Type: application/json
 
-**What a grant is allowed to be.** `pro` is every entitlement that is a property
-of *this site* — resolver ordering, queueing, how results are packaged. None of
-them widens what a link can reach, and none makes this service present
-credentials on a user's behalf. That line is load-bearing rather than stylistic:
-a downloader that sells access to login-gated content is refused by every
-merchant of record, explicitly so in some cases (Polar's acceptable-use policy
-names third-party content downloaders outright; Paddle's catch-all covers
-anything "enabling unauthorized access to data belonging to another party").
-
-`ig` is on the other side of that line, which is exactly why it is a separate
-grant rather than a flag inside `pro`. It is never offered, never bundled, and
-`isEntitled` deliberately does not read it — a supporter is `pro` and is not
-`ig`, and there is a test pinning both directions. Before this existed,
-`IG_SESSIONID` alone was the whole gate, so setting it attached the cookie to
-*every* visitor's Instagram resolve; a named grant is strictly less exposure
-than that. Do not turn it into something anyone can obtain by paying — that is
-not a policy you can reword your way around.
-
-A credentialed resolve also bypasses both cache tiers in both directions. The
-edge cache is shared and externally addressable, so a login-gated payload
-written into it would be served to anonymous visitors; see the note in
-`src/lib/apiRoutes.ts`.
-
-Setting this up for a fork or self-hosted deployment, in order:
-
-1. **Google Cloud console** — create an OAuth client and configure its consent
-   screen. Register **both** redirect URIs (a mismatch between dev and
-   production here is the most common thing to get wrong): the `wrangler dev`
-   origin's `/api/auth/callback` and the production origin's `/api/auth/callback`.
-2. **No payment provider.** There is nothing to configure here — a fork that
-   wants the extras grants them with the `wrangler d1 execute` command above.
-   The Creem webhook, portal and reconcile code is still in
-   `src/lib/billing/` and still tested, so a fork that finds a processor
-   willing to underwrite this category has a working half to build on. Read
-   `lessons/2026-08-10-creem-payout-rejection.md` first: two refused, and the
-   second refusal came after every fixable checklist item had been fixed.
-3. **Cloudflare** — create the D1 database, apply the migrations
-   (`wrangler d1 migrations apply <name> --remote` — use this rather than
-   executing the SQL files directly, or the `d1_migrations` bookkeeping table
-   will disagree with the schema and later migrations will fail), add the `DB`
-   binding in `wrangler.jsonc`, then set the five secrets above with
-   `pnpm cf:setup` (reads `.env`) or `wrangler secret put`.
-
-   Order matters for one of them: do not put live checkout URLs in
-   `src/config/pro.ts` until `CREEM_WEBHOOK_SECRET` is set. The webhook route
-   fails closed with a 503 while that secret is missing, and Creem eventually
-   stops retrying — so a purchase made in that window is billed with no
-   subscription recorded.
-4. **Edge policy** — `pnpm cf:waf` applies the zone's WAF rules, rate limit, bot
-   settings and TLS settings; `pnpm cf:health` reads back who the edge stopped in
-   the last 24 hours. Both are idempotent, and
-   `.github/workflows/cloudflare-edge-policy.yml` runs them weekly, because zone
-   state is not repo state and a dashboard edit outlives every push.
-
-   The single thing to understand before touching it: **free-plan Bot Fight Mode
-   runs outside the Ruleset Engine, so no `skip` rule can exempt anything from
-   it.** Left on, it challenges crawlers, webhook senders and Google's own
-   review fetches, and a challenged request appears in no log — not
-   `wrangler tail`, not the deploy, nowhere but the zone's firewall events. It is
-   off, and the defence it provided is re-expressed as WAF rules that can be
-   scoped. `pnpm cf:health` is the only witness; run it after every change.
-
-   Which crawlers are welcome lives in **`src/config/crawlers.json`**, read by
-   both `src/app/robots.tsx` (the request) and `scripts/cf-setup.mjs` (the
-   enforcement). Editing one list changes both, which is the point: a crawler
-   invited in robots.txt and blocked at the edge is invisible until the traffic
-   never arrives.
-
-## How to use
-
-**Download a video, reel, or Short**
-
-1. Copy a link from any supported platform.
-2. Paste it into the input on the homepage (or tap **Paste**, or share it into the installed app).
-3. Click **Process URL** — the app fetches metadata and a clean download link.
-4. Optionally preview, then click **Video** or **Extract Audio** — or re-pick **HD / SD / MP3**.
-
-**Download several at once (batch)**
-
-1. Paste a list of links — one per line or space-separated.
-2. Each URL is detected and resolved in turn with live progress.
-
-**Download a photo carousel**
-
-1. Paste the photo post URL (a TikTok slideshow or an Instagram carousel).
-2. All images appear as a selectable grid.
-3. Toggle the selections, then download them individually or as a ZIP.
-4. For TikTok slideshows, click **Video (slideshow)** to render an MP4 of the images timed to the original music.
-
-**Install as an app**
-
-- **Android/Chrome:** tap **Install** on the in-app prompt (or the browser's install button). Afterwards, share links straight from other apps via **Share → Social Downloader**.
-- **iOS Safari:** tap **Share → Add to Home Screen**, then launch from the icon and use one-tap **Paste**.
-
-**Supported URL formats**
-
-| Platform  | Formats                                                                                                |
-| --------- | ------------------------------------------------------------------------------------------------------ |
-| TikTok    | `tiktok.com/@user/video/…`, `vm.tiktok.com/…`, `vt.tiktok.com/…`, `m.tiktok.com/v/…`, `tiktok.com/t/…` |
-| Twitter/X | `twitter.com/user/status/…`, `x.com/user/status/…`, `t.co/…`                                           |
-| Instagram | `instagram.com/p/…`, `instagram.com/reel/…`, `instagram.com/tv/…`, `instagram.com/share/…`             |
-| YouTube   | `youtube.com/watch?v=…`, `youtu.be/…`, `youtube.com/shorts/…`, `youtube.com/embed/…`                   |
-| Facebook  | `facebook.com/…/videos/…`, `facebook.com/watch/?v=…`, `facebook.com/reel/…`, `fb.watch/…`              |
-| Pinterest | `pinterest.com/pin/…`, `pin.it/…`                                                                       |
-| Reddit    | `reddit.com/r/…/comments/…`, `reddit.com/…/s/…`                                                         |
-| Threads   | `threads.net/@user/post/…`, `threads.com/@user/post/…`, `threads.net/t/…`                              |
-| Snapchat  | `snapchat.com/spotlight/…`, `snapchat.com/t/…`, `story.snapchat.com/…`                                 |
-| Twitch    | `twitch.tv/…/clip/…`, `clips.twitch.tv/…`, `twitch.tv/videos/…`                                        |
-| Vimeo     | `vimeo.com/…`, `player.vimeo.com/video/…`                                                               |
-
-## Project structure
-
-```
-src/
-├── app/
-│   ├── page.tsx                 # Home page
-│   ├── layout.tsx               # Root layout, metadata, JSON-LD injection
-│   ├── <platform>-downloader/   # 11 per-platform landing pages (SEO)
-│   ├── opengraph-image.tsx      # Dynamic 1200x630 OG image (edge runtime)
-│   ├── twitter-image.tsx        # Twitter card image (delegates to OG)
-│   ├── robots.ts                # robots.txt (incl. AI crawler policy)
-│   ├── sitemap.ts               # sitemap.xml with hreflang + OG image
-│   ├── globals.css
-│   └── api/
-│       ├── download/            # POST — resolves URL, returns video/image data
-│       ├── video/               # GET  — proxies the video stream (video/mp4, range-aware)
-│       ├── audio/               # GET  — proxies the same stream as audio/mpeg
-│       ├── image/               # GET  — proxies a single image (CORS + CDN referer)
-│       ├── images/              # POST — batch image fetcher with ZIP support
-│       ├── slideshow/           # POST — renders an MP4 from images + audio (ffmpeg)
-│       ├── thumb/               # GET  — proxied, cached thumbnails for Recent tiles
-│       ├── tiktok/              # platform-specific resolve helper
-│       └── youtube/             # platform-specific resolve helper
-├── components/
-│   ├── DownloaderApp.tsx        # Main client app (paste, batch, re-pick, Recent)
-│   ├── InstallPrompt.tsx        # PWA install nudge (Android + iOS)
-│   ├── PlatformLanding.tsx      # Shared landing-page template
-│   ├── ImageLightbox.tsx, GlowCard.tsx, InteractiveBackground.tsx, …
-│   └── icons.tsx
-├── config/
-│   └── site.ts                  # Single source of truth for site metadata
-└── lib/
-    ├── downloader.ts            # Core resolve logic + per-platform fallbacks
-    ├── validator.ts             # URL validation and platform detection (11 platforms)
-    ├── platforms.ts             # Per-platform copy, colors, landing config
-    ├── proxyHeaders.ts          # Per-CDN Referer resolution shared by proxy routes
-    ├── responseCache.ts         # Warm-instance resolve cache
-    ├── history.ts               # Local, privacy-friendly Recent list
-    ├── appReducer.ts            # Client state machine
-    ├── audioExtractor.ts        # Audio extraction helpers
-    ├── videoProcessor.ts        # Video processing utilities
-    ├── ytdlp.ts                 # youtube-dl-exec fallback
-    ├── structuredData.ts        # JSON-LD graph (Schema.org)
-    ├── platformOgImage.tsx      # Per-platform OG image rendering
-    ├── types.ts                 # Shared TypeScript types
-    └── utils.ts
-```
-
-## API reference
-
-### `POST /api/download`
-
-Resolves a supported URL and returns download links and metadata.
-
-```json
-{ "url": "https://www.instagram.com/reel/ABC123/" }
-```
-
-Video response:
-
-```json
 {
-  "success": true,
-  "downloadUrl": "/api/video?url=...",
-  "audioUrl": "/api/audio?url=...",
-  "metadata": { "title": "…", "author": "…", "thumbnail": "…", "platform": "instagram" }
+  "url": "2.84 复制打开抖音，看看作品 https://v.douyin.com/xxxx/ 复制口令",
+  "quality": "hd",
+  "format": "video"
 }
 ```
 
-Photo carousel response:
+接口会自动从完整分享文案中提取链接。成功响应中：
 
-```json
-{
-  "success": true,
-  "metadata": {
-    "title": "…",
-    "author": "…",
-    "platform": "instagram",
-    "images": ["…", "…"]
-  }
-}
-```
+- `downloadUrl`：同源媒体代理地址；
+- `audioUrl`：可用时返回音频地址；
+- `metadata.images`：图文作品的图片列表；
+- `metadata.directVideoUrl`：Cobalt 隧道可直接下载时返回。
 
-### `GET /api/video?url=<encoded>`
+## 安全说明
 
-Proxies a video file with `Content-Type: video/mp4`, adding the correct `Referer` for each CDN (via `lib/proxyHeaders.ts`) and honoring HTTP range requests so preview/seek works.
+- API Key 仅保存在 Cloudflare Secret 中，不提交到仓库。
+- 页面不会要求用户提交平台 Cookie。
+- 只解析公开链接，不绕过登录、付费或 DRM 限制。
+- 公共 Cobalt 实例属于第三方服务，可能记录请求链接，也可能限流或停止服务；隐私敏感场景建议配置自建实例。
+- 媒体链接通常有时效，解析后应尽快下载。
 
-### `GET /api/audio?url=<encoded>`
+## 当前限制
 
-Same proxy as `/api/video` but with `Content-Type: audio/mpeg`, so browsers treat it as an audio download.
+- 抖音对数据中心 IP 的风控较强，不配置 `IFPHP_API_KEY` 时成功率无法保证。
+- B站公开接口返回的单文件 MP4 清晰度通常低于需要 DASH 合并的最高画质；Cloudflare Workers 不能运行 ffmpeg。
+- 小红书分享页可能只返回“请在 App 内打开”，这时会依赖 IF-PHP 或 Cobalt 回退。
+- 公共第三方接口随时可能限流、改版或下线。
 
-### `GET /api/image?url=<encoded>`
+## 许可证与致谢
 
-Proxies a single image with the correct CDN `Referer` and permissive CORS headers. Instagram's CDN refuses cross-origin browser requests, so Instagram image previews and individual downloads are routed through this endpoint.
+本项目沿用上游项目的 MIT License。
 
-### `POST /api/images`
+- 上游项目：[Vette1123/social-media-downloader](https://github.com/Vette1123/social-media-downloader)
+- 中国平台增强分支：[cmbya/social-media-downloader](https://github.com/cmbya/social-media-downloader)
 
-Fetches a list of image URLs. Returns either a JSON list of (proxied) downloadable URLs or a ZIP archive depending on `asZip`.
-
-```json
-{ "imageUrls": ["https://…"], "title": "post-title", "asZip": true }
-```
-
-### `POST /api/slideshow`
-
-Renders a real MP4 from a TikTok photo carousel using ffmpeg, timing each image and laying the original music on top.
-
-```json
-{
-  "imageUrls": ["https://…", "https://…"],
-  "audioUrl": "https://…",
-  "perImageSeconds": 3
-}
-```
-
-## Source fallback order
-
-The downloader tries providers in order and falls back automatically on failure.
-
-- **TikTok videos:** Tikwm → Snaptik → SSSTik → direct scraping
-- **Twitter/X videos:** vxTwitter → public Cobalt instances
-- **Instagram posts/reels:** embed page (`shortcode_media`) → private media API (`/api/v1/media/<id>/info/`, session only) → public Cobalt instances. The embed resolves public posts, reels and carousels with no login; Cobalt covers what it misses. Anything Instagram will not serve logged-out — private, age- or region-restricted posts, and all stories — needs `IG_SESSIONID` *and* the `ig` grant on the requesting account. The web GraphQL extractor was removed on 2026-08-15: Instagram retired the persisted query and refuses the `doc_id` itself, identically for a logged-out and a logged-in caller.
-- **YouTube videos/Shorts:** public Cobalt instances → public Piped instances → `youtube-dl-exec` (metadata enriched via YouTube oEmbed)
-- **Facebook videos/reels:** video plugin page (`/plugins/video.php`) → direct page scrape (`browser_native_*_url`) → public Cobalt instances
-- **Vimeo:** player config (`/config`) progressive renditions → embed-only when Vimeo ships no progressive rendition for that video (playable, not downloadable — the DASH/HLS manifests it ships instead need ffmpeg)
-- **Reddit:** the embed view's `packaged-media-json` (pre-muxed MP4s; the raw `v.redd.it` renditions are video and audio in separate files) → Cobalt
-- **Threads:** the post's `/embed` view, requested as a link crawler (a browser user agent gets the empty app shell) → Cobalt
-- **Twitch clips:** the public GraphQL clip query, signed with the access token from the same response → Cobalt. VODs are HLS and are not supported.
-- **Pinterest:** the widget API (`/v3/pidgets/pins/info/`) — video renditions, or the image as a one-image gallery → Cobalt
-- **Snapchat and anything else:** best-effort via public Cobalt instances, then the generic page scrape
-
-Each platform above tries its own endpoint *before* Cobalt because the one open
-public instance now answers `api.fetch.fail`/`api.fetch.critical` for most of
-them — its address is blocked by the origins. Cobalt stays in the chain: when it
-does answer, it tunnels the media, which streams from any IP.
-
-> Cobalt does the heavy lifting on serverless hosts (where `yt-dlp` isn't available). Set `COBALT_API_URL` to point the fallback chain at your own [Cobalt](https://github.com/imputnet/cobalt) instance for more reliable, higher-throughput extraction.
-
-## Deployment
-
-The project deploys to [Vercel](https://vercel.com/new) with no configuration. It runs on any Node.js host that supports Next.js 16 (Node 20+, ideally 24 LTS).
-
-`@vercel/og` requires the edge runtime; the OG and Twitter card routes are already configured for it. For the most reliable extraction in production, set `COBALT_API_URL` to a self-hosted Cobalt instance.
-
-## Legal
-
-This tool is intended for personal use with content you have the right to save. Respect the Terms of Service of each platform and do not download content without the creator's permission. Private accounts, stories, and age-restricted, members-only, or private videos are not supported.
-
-## Author
-
-Built and maintained by **[Mohamed Gado](https://www.mohamedgado.com)** — [mohamedgado.com](https://www.mohamedgado.com).
-
-## License
-
-MIT — see [LICENSE](LICENSE).
-
-## Issues and contributions
-
-Open a ticket on the [Issues](../../issues) page with a description, the URL format you tried, and any error message. Pull requests welcome. If the tool saved you time, a ⭐ goes a long way.
+请遵守目标平台的服务条款、当地法律和内容版权要求，仅下载你有权保存的内容。

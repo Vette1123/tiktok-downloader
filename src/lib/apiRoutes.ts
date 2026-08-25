@@ -17,7 +17,7 @@
  */
 
 import { Downloader } from './downloader'
-import { validateUrl, detectPlatform } from './validator'
+import { validateUrl, detectPlatform, extractFirstHttpUrl } from './validator'
 import { getCached, setCached } from './responseCache'
 import { readEdgeCache, writeEdgeCache, type WaitUntilContext } from './edgeCache'
 import { slugify } from './filename'
@@ -204,18 +204,23 @@ export async function handleDownload(
       return Response.json({ success: false, error: 'URL is required' }, { status: 400 })
     }
 
-    if (!validateUrl(url)) {
+    // Chinese share sheets usually copy a full caption containing one URL.
+    // Resolve/cache the URL itself so trailing share text never reaches an
+    // upstream API and equivalent captions share the same cache entry.
+    const sourceUrl = extractFirstHttpUrl(String(url)) ?? String(url).trim()
+
+    if (!validateUrl(sourceUrl)) {
       return Response.json(
         {
           success: false,
           error:
-            'Invalid URL. Please paste a link from a supported platform: TikTok, X, Instagram, Facebook, YouTube, Pinterest, Reddit, Threads, Snapchat, Twitch, or Vimeo.',
+            'Invalid URL. Please paste a link from Douyin, Kuaishou, Bilibili, Xiaohongshu, TikTok, X, Instagram, Facebook, YouTube, Pinterest, Reddit, Threads, Snapchat, Twitch, or Vimeo.',
         },
         { status: 400 },
       )
     }
 
-    const platform = detectPlatform(url)
+    const platform = detectPlatform(sourceUrl)
 
     // An absent or stale token degrades silently to the normal anonymous path;
     // nothing here is gated in a way that errors.
@@ -257,7 +262,7 @@ export async function handleDownload(
     // that shared store holding credentialed payloads — the same mistake the
     // old `auth`/`anon` split made. Bypassing costs one uncached resolve for
     // the handful of rows that carry the grant.
-    const cacheKey = resolveCacheKey(type, preferredQuality, mode, url)
+    const cacheKey = resolveCacheKey(type, preferredQuality, mode, sourceUrl)
     const origin = new URL(request.url).origin
 
     if (!credentialed) {
@@ -279,7 +284,7 @@ export async function handleDownload(
       priority,
       credentialed,
     })
-    const videoData = await downloader.downloadVideo(url)
+    const videoData = await downloader.downloadVideo(sourceUrl)
 
     // Accept the result if it yielded any downloadable media: a video stream, a
     // flagged photo carousel (TikTok), a plain image set (Instagram posts), or
@@ -313,12 +318,19 @@ export async function handleDownload(
       ? toMediaUrl(audioSourceUrl, '/api/audio')
       : undefined
 
-    // Instagram's CDN only serves to instagram.com, so its image URLs must go
-    // through our same-origin proxy for both display and download. TikTok and
-    // Twitter images load directly and are left untouched.
-    const isInstagram = platform === 'instagram'
+    // These CDNs enforce platform referers. Serve their images through the
+    // same-origin proxy, which adds the platform-specific Referer header.
+    const imageProxyPlatforms = new Set([
+      'instagram',
+      'douyin',
+      'kuaishou',
+      'bilibili',
+      'xiaohongshu',
+    ])
     const proxyImage = (u: string) =>
-      isInstagram && u ? `/api/image?url=${encodeURIComponent(u)}` : u
+      imageProxyPlatforms.has(platform) && u
+        ? `/api/image?url=${encodeURIComponent(u)}`
+        : u
 
     const directVideoUrl = videoData.tunnel
       ? asDirectTunnel(videoData.downloadUrl)

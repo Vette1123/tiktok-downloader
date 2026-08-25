@@ -1,4 +1,8 @@
 export type SupportedPlatform =
+  | 'douyin'
+  | 'kuaishou'
+  | 'bilibili'
+  | 'xiaohongshu'
   | 'tiktok'
   | 'twitter'
   | 'instagram'
@@ -17,6 +21,24 @@ const platformPatterns: Record<
   Exclude<SupportedPlatform, 'unknown' | 'generic'>,
   RegExp[]
 > = {
+  douyin: [
+    /^(https?:\/\/)?(?:www\.|m\.)?douyin\.com\/(?:video|note)\/\d+/,
+    /^(https?:\/\/)?v\.douyin\.com\/[\w-]+/,
+    /^(https?:\/\/)?(?:www\.)?iesdouyin\.com\/(?:share\/)?(?:video|note)\/\d+/,
+  ],
+  kuaishou: [
+    /^(https?:\/\/)?v\.kuaishou\.com\/[\w-]+/,
+    /^(https?:\/\/)?(?:www\.|m\.)?kuaishou\.com\/(?:short-video|f|photo)\/[\w-]+/,
+    /^(https?:\/\/)?v\.m\.chenzhongtech\.com\/fw\/[\w/-]+/,
+  ],
+  bilibili: [
+    /^(https?:\/\/)?(?:www\.|m\.)?bilibili\.com\/video\/(?:BV[\w]+|av\d+)/i,
+    /^(https?:\/\/)?b23\.tv\/[\w-]+/,
+  ],
+  xiaohongshu: [
+    /^(https?:\/\/)?(?:www\.)?xiaohongshu\.com\/(?:discovery\/item|explore)\/[\w-]+/,
+    /^(https?:\/\/)?(?:www\.)?xhslink\.(?:com|cn)\/[\w/-]+/,
+  ],
   tiktok: [
     /^(https?:\/\/)?(www\.)?tiktok\.com\/@[\w.-]+\/video\/\d+/,
     /^(https?:\/\/)?(www\.)?tiktok\.com\/[\w.-]+\/video\/\d+/,
@@ -117,7 +139,7 @@ const platformPatterns: Record<
 
 export function detectPlatform(url: string): SupportedPlatform {
   if (!url || typeof url !== 'string') return 'unknown'
-  const trimmed = url.trim()
+  const trimmed = extractFirstHttpUrl(url) ?? url.trim()
   for (const [platform, patterns] of Object.entries(platformPatterns)) {
     if (patterns.some((p) => p.test(trimmed))) {
       return platform as SupportedPlatform
@@ -127,6 +149,27 @@ export function detectPlatform(url: string): SupportedPlatform {
   // path (self-hosted resolver via COBALT_API_URL). Non-URL text stays unknown
   // so it still surfaces the "unsupported link" message.
   return isHttpUrl(trimmed) ? 'generic' : 'unknown'
+}
+
+/**
+ * Pull the first HTTP(S) URL out of a full share caption.
+ *
+ * Chinese apps commonly copy a sentence plus a URL instead of the bare URL.
+ * The token is trimmed at punctuation that cannot be part of a valid share
+ * link, while query-string punctuation such as `&`, `=` and `%` is preserved.
+ */
+export function extractFirstHttpUrl(input: string): string | null {
+  if (!input || typeof input !== 'string') return null
+  const match = input.match(/https?:\/\/[^\s<>"']+/i)
+  if (!match) return null
+  const candidate = match[0].replace(/[，。！？；：、）】》」』]+$/u, '')
+  try {
+    const parsed = new URL(candidate)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+    return parsed.toString()
+  } catch {
+    return null
+  }
 }
 
 // True only for a syntactically valid http/https URL with a real host.
@@ -169,6 +212,20 @@ export function parseVideoId(url: string): string | null {
   }
 
   return null
+}
+
+export function parseDouyinId(url: string): string | null {
+  const value = extractFirstHttpUrl(url) ?? url
+  return (
+    value.match(/\/(?:video|note|share\/video|share\/note)\/(\d+)/)?.[1] ??
+    value.match(/[?&]modal_id=(\d+)/)?.[1] ??
+    null
+  )
+}
+
+export function parseBilibiliId(url: string): string | null {
+  const value = extractFirstHttpUrl(url) ?? url
+  return value.match(/\b(BV[0-9A-Za-z]+)\b/i)?.[1] ?? null
 }
 
 /**

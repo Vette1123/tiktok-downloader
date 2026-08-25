@@ -57,8 +57,6 @@ import { API_ROUTES } from '../src/lib/apiRoutes'
  * everything else to the canonical origin.
  */
 const WEBHOOK_PATH = '/api/billing/webhook'
-const CANONICAL_ORIGIN = 'https://www.socialdownloader.space'
-
 function isWorkersDev(hostname) {
   return hostname.endsWith('.workers.dev')
 }
@@ -95,8 +93,17 @@ const worker = {
     // Checked before routing, so nothing else on this hostname is ever
     // dispatched — see WEBHOOK_PATH. 301 rather than 404 so a crawler that has
     // already found the workers.dev copy is told where the real page lives.
-    if (isWorkersDev(url.hostname) && url.pathname !== WEBHOOK_PATH) {
-      return Response.redirect(`${CANONICAL_ORIGIN}${url.pathname}${url.search}`, 301)
+    // The upstream project redirected its workers.dev hostname to the
+    // upstream author's domain. A fork must stay usable on its own hostname.
+    // Operators with a custom domain can opt back into that behaviour by
+    // setting CANONICAL_ORIGIN in the Worker environment.
+    const canonicalOrigin = String(env.CANONICAL_ORIGIN || '').replace(/\/$/, '')
+    if (
+      canonicalOrigin &&
+      isWorkersDev(url.hostname) &&
+      url.pathname !== WEBHOOK_PATH
+    ) {
+      return Response.redirect(`${canonicalOrigin}${url.pathname}${url.search}`, 301)
     }
 
     const route = API_ROUTES[url.pathname]

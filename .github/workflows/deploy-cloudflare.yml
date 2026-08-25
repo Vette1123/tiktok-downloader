@@ -22,7 +22,10 @@ env:
   YOUTUBE_DL_SKIP_PYTHON_CHECK: '1'
   # NEXT_PUBLIC_* is inlined at build time, so it has to be set for `next build`
   # — a Worker var would be read too late to affect the bundle.
-  NEXT_PUBLIC_SITE_URL: https://www.socialdownloader.space
+  # Set this repository variable to your final workers.dev/custom-domain URL.
+  # The fallback is build-safe and, unlike the upstream value, never sends
+  # visitors to somebody else's deployment.
+  NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL || 'https://social-media-downloader-cn.workers.dev' }}
 
 jobs:
   deploy:
