@@ -12,7 +12,7 @@
 | 快手 | 移动分享页直解析 → IF-PHP API → Cobalt 回退 | 否 | 支持完整分享文案和短链接 |
 | 小红书 | 分享页直解析 → IF-PHP 聚合 API → Cobalt 回退 | 否 | 风控页面可能需要后两种回退方式；Live Photo 优先返回静态原图 |
 | 哔哩哔哩 | B站公开接口 | 否 | 返回单文件 MP4，避免 Worker 无法合并 DASH 音视频的问题 |
-| Instagram | 公开嵌入页 → IF-PHP 聚合 API → Cobalt 回退 | 否 | 仅支持公开内容；第三方公共接口可能临时限流 |
+| Instagram | 项目自身公开嵌入页解析 → IF-PHP 聚合 API | 否 | 不向公共 Cobalt 发送 Instagram 链接；仅支持公开内容 |
 | TikTok、X、Facebook、YouTube 等 | 继承原项目解析链 | 否 | 仅支持公开可访问内容 |
 
 > 私密作品、好友可见作品、付费内容、DRM 内容以及登录后才能访问的内容不在支持范围内。
@@ -169,7 +169,7 @@ Content-Type: application/json
 - B站公开接口返回的单文件 MP4 清晰度通常低于需要 DASH 合并的最高画质；Cloudflare Workers 不能运行 ffmpeg。
 - 小红书分享页可能只返回“请在 App 内打开”，这时会依赖 IF-PHP 或 Cobalt 回退。
 - 小红书 Live Photo 暂不重建为苹果 Live Photo 文件；检测到静态原图时会按图片组提供下载，不再把运动片段伪装成普通视频。
-- Instagram 公共解析依赖平台公开页面、IF-PHP 和公共 Cobalt；任一第三方服务限流时可能需要稍后重试。
+- Instagram 只使用项目自身的公开页面解析和已配置 Key 的 IF-PHP，不调用公共 Cobalt；Instagram 拒绝 Cloudflare 数据中心访问时可能仍会失败。
 - 公共第三方接口随时可能限流、改版或下线。
 
 ## 许可证与致谢
