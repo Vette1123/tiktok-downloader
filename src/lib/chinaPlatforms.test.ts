@@ -222,6 +222,53 @@ describe('IF-PHP response normalisation', () => {
     expect(parsed?.downloadUrl).toBe('https://cdn.example/note.mp4')
     expect(parsed?.images).toBeUndefined()
   })
+
+  it('uses the real XHS stream instead of a generic video URL', () => {
+    const parsed = parseIfphpPayload(
+      {
+        code: 200,
+        data: {
+          type: 'video',
+          video: {
+            url: 'https://sns-webpic-qc.xhscdn.com/not-a-video',
+            media: {
+              stream: {
+                h264: [{ masterUrl: 'https://sns-video-bd.xhscdn.com/real.mp4' }],
+              },
+            },
+          },
+        },
+      },
+      'https://www.xiaohongshu.com/discovery/item/video-stream',
+      'xiaohongshu',
+    )
+    expect(parsed?.downloadUrl).toBe('https://sns-video-bd.xhscdn.com/real.mp4')
+  })
+
+  it('drops Live Photo motion streams when the note is an image list', () => {
+    const parsed = parseIfphpPayload(
+      {
+        code: 200,
+        data: {
+          type: 'normal',
+          imageList: [
+            {
+              urlDefault: 'https://sns-webpic-qc.xhscdn.com/one',
+              stream: { h264: [{ masterUrl: 'https://sns-video-bd.xhscdn.com/one.mp4' }] },
+            },
+            {
+              urlDefault: 'https://sns-webpic-qc.xhscdn.com/two',
+              stream: { h264: [{ masterUrl: 'https://sns-video-bd.xhscdn.com/two.mp4' }] },
+            },
+          ],
+        },
+      },
+      'https://www.xiaohongshu.com/discovery/item/image-stream',
+      'xiaohongshu',
+    )
+    expect(parsed?.downloadUrl).toBe('')
+    expect(parsed?.images).toHaveLength(2)
+  })
 })
 
 describe('Xiaohongshu Cobalt fallback normalisation', () => {
