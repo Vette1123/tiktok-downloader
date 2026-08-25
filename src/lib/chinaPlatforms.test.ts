@@ -186,6 +186,26 @@ describe('IF-PHP response normalisation', () => {
     expect(videoPost?.images).toBeUndefined()
   })
 
+  it('recognises an extensionless still returned under a generic video-shaped field', () => {
+    const parsed = parseIfphpPayload(
+      {
+        code: 200,
+        data: {
+          note_type: 'normal',
+          note_id: '6a890eda000000003a02d0d8',
+          video: {
+            url: 'https://sns-img-qc.xhscdn.com/20260825/static!nd_dft_wlteh_webp_3',
+          },
+          cover: 'https://sns-img-qc.xhscdn.com/20260825/cover!nd_dft_wlteh_webp_3',
+        },
+      },
+      'https://www.xiaohongshu.com/discovery/item/6a890eda000000003a02d0d8',
+      'xiaohongshu',
+    )
+    expect(parsed?.downloadUrl).toBe('')
+    expect(parsed?.images).toHaveLength(1)
+  })
+
   it('keeps a normal Xiaohongshu video when no image list exists', () => {
     const parsed = parseIfphpPayload(
       {

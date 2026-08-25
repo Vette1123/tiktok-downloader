@@ -241,28 +241,54 @@ function stringAtPath(value: unknown, keys: readonly string[]): string {
 
 function isXiaohongshuImagePost(value: unknown): boolean {
   if (!value || typeof value !== 'object') return false
-  const root = value as Record<string, unknown>
-  const candidates = [root, root.data].filter(
-    (item): item is Record<string, unknown> =>
-      !!item && typeof item === 'object' && !Array.isArray(item),
-  )
-  for (const candidate of candidates) {
-    for (const key of [
-      'type',
-      'media_type',
-      'mediaType',
-      'note_type',
-      'noteType',
-      'content_type',
-      'contentType',
-    ]) {
-      const kind = text(candidate[key]).toLowerCase()
-      if (/^(?:image|images|photo|picture|图文|图片|静态图)$/.test(kind)) {
-        return true
+
+  const seen = new Set<unknown>()
+  const walk = (current: unknown, keyPath = ''): boolean => {
+    if (seen.has(current)) return false
+    if (current && typeof current === 'object') seen.add(current)
+
+    if (current && typeof current === 'object' && !Array.isArray(current)) {
+      const record = current as Record<string, unknown>
+      for (const key of [
+        'type',
+        'media_type',
+        'mediaType',
+        'note_type',
+        'noteType',
+        'content_type',
+        'contentType',
+      ]) {
+        const kind = text(record[key]).toLowerCase()
+        if (/^(?:image|images|photo|picture|图文|图片|静态图)$/.test(kind)) {
+          return true
+        }
       }
+
+      // IF-PHP has returned the note kind at different nesting levels. It
+      // also sometimes omits the kind and exposes only an image collection.
+      // An image collection is stronger evidence than a generic `url` field;
+      // a video's `cover`/`thumbnail` is deliberately not included here.
+      for (const [key, child] of Object.entries(record)) {
+        if (
+          /^(?:images?|image_list|imageList|photo_list|photoList|pics?|img)$/i.test(
+            key,
+          ) &&
+          (Array.isArray(child) || /^https?:\/\//i.test(text(child)))
+        ) {
+          return true
+        }
+        if (walk(child, keyPath ? `${keyPath}.${key}` : key)) return true
+      }
+      return false
     }
+
+    if (Array.isArray(current)) {
+      return current.some((item, index) => walk(item, `${keyPath}.${index}`))
+    }
+    return false
   }
-  return false
+
+  return walk(value)
 }
 
 function mediaFromObject(
@@ -291,7 +317,10 @@ function mediaFromObject(
       )
       const xhsImageHost =
         platform === 'xiaohongshu' &&
-        /(?:xhscdn\.com|sns-webpic|sns-img)/i.test(normalized)
+        /(?:xhscdn\.com|sns-webpic|sns-img|ci\.xiaohongshu\.com)/i.test(
+          normalized,
+        ) &&
+        !/(?:sns-video|video[^/]*\.xhscdn\.com)/i.test(normalized)
       const directMediaUrl = /(?:^|\.)(?:url|src|image_url|imageUrl)$/i.test(
         keyPath,
       )
@@ -303,15 +332,16 @@ function mediaFromObject(
       if (
         platform === 'xiaohongshu' &&
         !videoFile &&
-        !coverPath &&
-        (imagePath ||
+        (((!coverPath || imagePost) && xhsImageHost) ||
+          imagePath ||
           (imagePost && directMediaUrl) ||
           (directMediaUrl && (imageFile || xhsImageHost)))
       ) {
         images.push(normalized)
       } else if (
         /(?:video|play|wm|nwm|master|origin|download|url)/i.test(keyPath) &&
-        !imageFile
+        !imageFile &&
+        !xhsImageHost
       ) {
         videos.push(normalized)
       }
