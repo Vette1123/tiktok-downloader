@@ -111,6 +111,29 @@ describe('IF-PHP response normalisation', () => {
     ])
   })
 
+  it('returns a single Xiaohongshu static photo as an image, never a video', () => {
+    const parsed = parseIfphpPayload(
+      {
+        code: 200,
+        data: {
+          note_id: '6a6c647d0000000006006316',
+          title: '甬万能旅行拍照姿势美美出片',
+          image_list: [
+            { url: 'https://sns-webpic.example/static-photo.webp' },
+          ],
+        },
+      },
+      'https://xhslink.cn/o/7vXtXs5hr7d',
+      'xiaohongshu',
+    )
+    expect(parsed?.downloadUrl).toBe('')
+    expect(parsed?.duration).toBe(0)
+    expect(parsed?.images).toHaveLength(1)
+    expect(parsed?.images?.[0]?.url).toBe(
+      'https://sns-webpic.example/static-photo.webp',
+    )
+  })
+
   it('keeps a normal Xiaohongshu video when no image list exists', () => {
     const parsed = parseIfphpPayload(
       {

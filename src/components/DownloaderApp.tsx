@@ -4,7 +4,6 @@ import dynamic from 'next/dynamic'
 import {
   useCallback,
   useEffect,
-  useMemo,
   useReducer,
   useRef,
   useState,
@@ -13,7 +12,6 @@ import {
 import { Surface } from '@/components/Surface'
 import {
   appReducer,
-  type AppState,
   initialState,
   isSuccessMessage,
   type VideoMetadata,
@@ -34,20 +32,11 @@ import {
   TwitterXIcon,
   YouTubeIcon,
 } from '@/components/icons'
-import { BatchPanel } from '@/components/BatchPanel'
-import { InstallPrompt } from '@/components/InstallPrompt'
-import { PastDueBanner } from '@/components/PastDueBanner'
-import { PromoSlot } from '@/components/PromoSlot'
-import { ProNudge } from '@/components/ProNudge'
-import { SUPPORT_PRICES } from '@/config/support'
-import { parseBatchInput } from '@/lib/batchQueue'
-import { recordResolve } from '@/lib/proSignals'
 import { nowMs, useIsIOSLike } from '@/lib/clientEnv'
 import { setFormat, setQuality, usePrefs } from '@/lib/prefs'
 import { buildDownloadFilename } from '@/lib/filename'
 import { friendlyError } from '@/lib/errorMessages'
 import { resolve } from '@/lib/resolve'
-import { useProToken } from '@/lib/entitlements'
 import {
   addHistory,
   clearHistory,
@@ -183,15 +172,6 @@ function isTooSlowToStream(
 // flags because video/audio/images can each be mid-transfer on their own.
 // The promo slot (and anything else that must stay off-screen for the whole
 // paste-to-download path) gates on this rather than inlining the four terms.
-function isResolvingOrDownloading(state: AppState): boolean {
-  return (
-    state.loading ||
-    state.downloading ||
-    state.downloadingAudio ||
-    state.downloadingImages
-  )
-}
-
 // Capture a tiny, self-contained snapshot of a thumbnail for the Recent list.
 // Loads the image through our same-origin /api/image proxy (which sets CORS +
 // the right Referer for hotlink-gated CDNs), downscales it onto a canvas, and
@@ -383,7 +363,7 @@ function friendlyTitle(rawTitle: string | undefined, platform?: string): string 
   const t = (rawTitle || '').trim()
   if (t && !/^https?:\/\//i.test(t) && !/^untitled$/i.test(t)) return t
   const name = platform ? PLATFORM_DISPLAY[platform] : ''
-  return name ? `${name} video` : 'Saved link'
+  return name ? `${name}内容` : '已保存链接'
 }
 
 // Branded fallback tile for a Recent entry with no usable snapshot. IG/FB/YT
@@ -494,7 +474,6 @@ export function DownloaderApp() {
   // How many links are sitting in the field right now. The same parser the
   // batch runner uses, so "two links" here means exactly what it will mean when
   // Download is pressed — and memoised because this runs on every keystroke.
-  const pastedLinks = useMemo(() => parseBatchInput(state.url).length, [state.url])
   // iPhone/iPad Safari: downloads land in Files, not the camera roll, so we show
   // a one-line "save to Photos" hint on video results. Set once on mount.
   // Read straight from the browser rather than via an effect — see lib/clientEnv.
@@ -502,7 +481,6 @@ export function DownloaderApp() {
   const didInit = useRef(false)
   // Pro token, sent as X-Pro-Token so the server tries the operator's own
   // resolvers first for a subscriber's request — see lib/entitlements.
-  const proToken = useProToken()
 
   // Thin aliases: the store already persists and notifies, so these exist only
   // to keep the call sites in this file reading the same as before.
@@ -523,7 +501,6 @@ export function DownloaderApp() {
       type: state.downloadType,
       quality: opts?.quality ?? quality,
       format: opts?.format ?? format,
-      proToken,
     })
 
   // Snapshot the thumbnail off the main flow and prepend the link to Recent so
@@ -554,7 +531,6 @@ export function DownloaderApp() {
     // The one place a link is known to have resolved, which is why the day's
     // count is kept here rather than at each of the download buttons. Local
     // only — it decides whether the header pill has earned a sentence.
-    recordResolve()
   }
 
   // Re-resolve the current result at a different rendition (HD / Data saver /
@@ -735,8 +711,8 @@ export function DownloaderApp() {
       type: 'SET_MESSAGE',
       payload:
         saved > 0
-          ? `Saved ${saved} of ${urls.length} links to Recent — tap any to download. 🎉`
-          : `Couldn’t resolve any of those ${urls.length} links. Check they’re public post URLs and try again.`,
+          ? `已成功解析 ${saved}/${urls.length} 个链接，可在“最近记录”中继续下载。`
+          : `这 ${urls.length} 个链接均未能解析，请确认它们是可公开访问的作品链接。`,
     })
   }
 
@@ -746,7 +722,7 @@ export function DownloaderApp() {
   const handlePaste = async () => {
     if (!navigator.clipboard?.readText) {
       inputRef.current?.focus()
-      setUrlError('Long-press the field and choose Paste.')
+      setUrlError('请长按输入框并选择“粘贴”。')
       return
     }
     try {
@@ -757,13 +733,13 @@ export function DownloaderApp() {
       } else if (text.trim()) {
         dispatch({ type: 'SET_URL', payload: text.trim() })
         inputRef.current?.focus()
-        setUrlError('That doesn’t look like a link — paste a post URL.')
+        setUrlError('剪贴板内容不是有效链接，请粘贴完整的作品网址。')
       } else {
         inputRef.current?.focus()
       }
     } catch {
       inputRef.current?.focus()
-      setUrlError('Couldn’t read the clipboard — paste the link manually.')
+      setUrlError('无法读取剪贴板，请手动粘贴链接。')
     }
   }
 
@@ -816,7 +792,7 @@ export function DownloaderApp() {
       // "preparing" state until the stream starts reporting.
       dispatch({ type: 'SET_DOWNLOADING', payload: true })
       dispatch({ type: 'SET_PROGRESS', payload: null })
-      dispatch({ type: 'SET_MESSAGE', payload: 'Preparing your download…' })
+      dispatch({ type: 'SET_MESSAGE', payload: '正在准备下载…' })
       const outcome = await downloadDirectWithProgress(direct, filename, (p) =>
         dispatch({ type: 'SET_PROGRESS', payload: p }),
       )
@@ -825,7 +801,7 @@ export function DownloaderApp() {
         dispatch({ type: 'SET_PROGRESS', payload: null })
         dispatch({
           type: 'SET_MESSAGE',
-          payload: 'Video downloaded successfully! 🎉',
+          payload: '视频下载成功！🎉',
         })
         dispatch({ type: 'SET_URL', payload: '' })
         return
@@ -846,7 +822,7 @@ export function DownloaderApp() {
           dispatch({ type: 'SET_PROGRESS', payload: null })
           dispatch({
             type: 'SET_MESSAGE',
-            payload: 'Download started. Check your downloads. 🎉',
+            payload: '下载已开始，请查看浏览器下载记录。',
           })
         }, 2800)
         return
@@ -862,7 +838,7 @@ export function DownloaderApp() {
       const response = await fetch(state.downloadUrl)
 
       if (!response.ok) {
-        throw new Error('Failed to download video')
+        throw new Error('视频下载请求失败')
       }
       const blob = await streamToBlob(response, (p) =>
         dispatch({ type: 'SET_PROGRESS', payload: p }),
@@ -879,14 +855,14 @@ export function DownloaderApp() {
 
       dispatch({
         type: 'SET_MESSAGE',
-        payload: 'Video downloaded successfully! 🎉',
+        payload: '视频下载成功！🎉',
       })
       dispatch({ type: 'SET_URL', payload: '' })
     } catch (error) {
       console.error('Download failed:', error)
       dispatch({
         type: 'SET_MESSAGE',
-        payload: 'Failed to download video file',
+        payload: '视频文件下载失败。',
       })
     } finally {
       dispatch({ type: 'SET_DOWNLOADING', payload: false })
@@ -902,7 +878,7 @@ export function DownloaderApp() {
     dispatch({ type: 'SET_DOWNLOADING', payload: true })
     dispatch({
       type: 'SET_MESSAGE',
-      payload: 'Rendering slideshow video... this takes ~30 seconds.',
+      payload: '正在生成图集视频，通常需要约 30 秒…',
     })
 
     try {
@@ -918,7 +894,7 @@ export function DownloaderApp() {
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({}))
-        throw new Error(err.error || 'Failed to render slideshow')
+        throw new Error(err.error || '图集视频生成失败')
       }
 
       const blob = await streamToBlob(response, (p) =>
@@ -936,7 +912,7 @@ export function DownloaderApp() {
 
       dispatch({
         type: 'SET_MESSAGE',
-        payload: 'Slideshow video rendered and downloaded! 🎬',
+        payload: '图集视频已生成并下载成功！🎬',
       })
       dispatch({ type: 'SET_URL', payload: '' })
     } catch (error) {
@@ -945,8 +921,8 @@ export function DownloaderApp() {
         type: 'SET_MESSAGE',
         payload:
           error instanceof Error
-            ? `Slideshow render failed: ${error.message}`
-            : 'Failed to render slideshow video',
+            ? `图集视频生成失败：${error.message}`
+            : '图集视频生成失败。',
       })
     } finally {
       dispatch({ type: 'SET_DOWNLOADING', payload: false })
@@ -972,7 +948,7 @@ export function DownloaderApp() {
       })
       dispatch({ type: 'SET_DOWNLOADING_AUDIO', payload: true })
       dispatch({ type: 'SET_PROGRESS', payload: null })
-      dispatch({ type: 'SET_MESSAGE', payload: 'Preparing your download…' })
+      dispatch({ type: 'SET_MESSAGE', payload: '正在准备下载…' })
       const outcome = await downloadDirectWithProgress(direct, filename, (p) =>
         dispatch({ type: 'SET_PROGRESS', payload: p }),
       )
@@ -981,7 +957,7 @@ export function DownloaderApp() {
         dispatch({ type: 'SET_PROGRESS', payload: null })
         dispatch({
           type: 'SET_MESSAGE',
-          payload: 'Audio downloaded successfully! 🎵',
+          payload: '音频下载成功！🎵',
         })
         dispatch({ type: 'SET_URL', payload: '' })
         return
@@ -999,7 +975,7 @@ export function DownloaderApp() {
           dispatch({ type: 'SET_PROGRESS', payload: null })
           dispatch({
             type: 'SET_MESSAGE',
-            payload: 'Download started. Check your downloads. 🎵',
+            payload: '音频下载已开始，请查看浏览器下载记录。',
           })
         }, 2800)
         return
@@ -1013,7 +989,7 @@ export function DownloaderApp() {
       const response = await fetch(state.audioUrl)
 
       if (!response.ok) {
-        throw new Error('Failed to download audio')
+        throw new Error('音频下载请求失败')
       }
       const blob = await streamToBlob(response, (p) =>
         dispatch({ type: 'SET_PROGRESS', payload: p }),
@@ -1030,14 +1006,14 @@ export function DownloaderApp() {
 
       dispatch({
         type: 'SET_MESSAGE',
-        payload: 'Audio downloaded successfully! 🎵',
+        payload: '音频下载成功！🎵',
       })
       dispatch({ type: 'SET_URL', payload: '' })
     } catch (error) {
       console.error('Audio download failed:', error)
       dispatch({
         type: 'SET_MESSAGE',
-        payload: 'Failed to download audio file',
+        payload: '音频文件下载失败。',
       })
     } finally {
       dispatch({ type: 'SET_DOWNLOADING_AUDIO', payload: false })
@@ -1055,7 +1031,7 @@ export function DownloaderApp() {
     if (selectedImages.length === 0) {
       dispatch({
         type: 'SET_MESSAGE',
-        payload: 'Please select at least one image to download',
+        payload: '请至少选择一张要下载的图片。',
       })
       return
     }
@@ -1123,7 +1099,7 @@ export function DownloaderApp() {
               // the archive rather than silently shrinking it.
               zip.file(
                 `${entry.filename}-failed.txt`,
-                `Failed to download: ${entry.url}`,
+                `下载失败：${entry.url}`,
               )
             } finally {
               noteProgress()
@@ -1161,7 +1137,7 @@ export function DownloaderApp() {
 
         dispatch({
           type: 'SET_MESSAGE',
-          payload: `${selectedImages.length} image(s) downloaded as ZIP! 🗜️`,
+          payload: `${selectedImages.length} 张图片已打包下载成功！🗜️`,
         })
         dispatch({ type: 'SET_URL', payload: '' })
       } else {
@@ -1174,13 +1150,13 @@ export function DownloaderApp() {
         })
 
         if (!response.ok) {
-          throw new Error('Failed to get image download URLs')
+          throw new Error('获取图片下载地址失败')
         }
 
         const data = await response.json()
 
         if (!data.success || !data.images) {
-          throw new Error('Invalid response from server')
+          throw new Error('服务器返回了无效结果')
         }
 
         const totalImages = data.images.length
@@ -1216,7 +1192,7 @@ export function DownloaderApp() {
         }
         dispatch({
           type: 'SET_MESSAGE',
-          payload: `${selectedImages.length} image(s) downloaded individually! 🖼️`,
+          payload: `${selectedImages.length} 张图片已分别下载成功！🖼️`,
         })
         dispatch({ type: 'SET_URL', payload: '' })
       }
@@ -1224,7 +1200,7 @@ export function DownloaderApp() {
       console.error('Image download failed:', error)
       dispatch({
         type: 'SET_MESSAGE',
-        payload: 'Failed to download images',
+        payload: '图片下载失败。',
       })
     } finally {
       dispatch({ type: 'SET_DOWNLOADING_IMAGES', payload: false })
@@ -1286,7 +1262,6 @@ export function DownloaderApp() {
 
   return (
     <div ref={containerRef} className='mx-auto w-full max-w-2xl'>
-      <PastDueBanner />
       {/* Paste bar — the hero action. Input + CTA share one focus-ring pill. */}
       <Surface
         ref={pasteBarRef}
@@ -1307,7 +1282,7 @@ export function DownloaderApp() {
             autoCorrect='off'
             autoComplete='off'
             spellCheck={false}
-            placeholder='Paste a video link…'
+            placeholder='粘贴作品链接…'
             value={state.url}
             onChange={(e) => {
               if (urlError) setUrlError(null)
@@ -1340,11 +1315,11 @@ export function DownloaderApp() {
             <button
               type='button'
               onClick={handlePaste}
-              aria-label='Paste link from clipboard'
+              aria-label='从剪贴板粘贴链接'
               className='card-hover absolute right-1.5 flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.06] px-2.5 py-1.5 text-xs font-medium text-white/70 hover:text-white active:scale-95'
             >
               <ClipboardIcon className='h-3.5 w-3.5' />
-              Paste
+              粘贴
             </button>
           )}
         </div>
@@ -1365,10 +1340,10 @@ export function DownloaderApp() {
           {state.loading ? (
             <span className='relative flex items-center'>
               <SpinnerIcon className='-ml-1 mr-2 h-4 w-4 md:h-5 md:w-5' />
-              Processing...
+              正在解析…
             </span>
           ) : (
-            <span className='relative'>Download</span>
+            <span className='relative'>开始解析</span>
           )}
         </button>
       </Surface>
@@ -1389,26 +1364,8 @@ export function DownloaderApp() {
           works without the extras — it resolves one at a time into Recent and
           leaves every download to be tapped by hand — so this describes the
           tedium the visitor is one page away from, not a gated feature. */}
-      {pastedLinks > 1 && (
-        <ProNudge
-          id='paste-multi'
-          tone='attached'
-          action='See how'
-          lede={
-            <>
-              <strong className='font-semibold text-white'>
-                {pastedLinks} links.
-              </strong>{' '}
-              These save to Recent to download one at a time. Supporters get a
-              queue that runs the whole list.
-            </>
-          }
-        />
-      )}
-
       <p className='mt-3 text-center text-xs text-white/50'>
-        Videos, reels, shorts, MP3 audio &amp; photo carousels — paste several
-        links to grab them in one go
+        支持公开的视频、音频与图片作品；可一次粘贴多个链接顺序解析
       </p>
 
       {/* Format + quality preferences — applied on the next resolve. Format
@@ -1417,10 +1374,10 @@ export function DownloaderApp() {
           in audio mode. */}
       <div className='mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs'>
         <div className='flex items-center gap-2'>
-          <span className='text-white/50'>Format</span>
+          <span className='text-white/50'>格式</span>
           <div
             role='group'
-            aria-label='Download format'
+            aria-label='下载格式'
             className='inline-flex rounded-full border border-white/10 bg-white/[0.03] p-0.5'
           >
             {(['video', 'audio'] as const).map((f) => (
@@ -1435,7 +1392,7 @@ export function DownloaderApp() {
                     : 'text-white/55 hover:text-white'
                 }`}
               >
-                {f === 'video' ? 'Video' : 'Audio (MP3)'}
+                {f === 'video' ? '视频' : '音频（MP3）'}
               </button>
             ))}
           </div>
@@ -1443,10 +1400,10 @@ export function DownloaderApp() {
 
         {format === 'video' && (
           <div className='flex items-center gap-2'>
-            <span className='text-white/50'>Quality</span>
+            <span className='text-white/50'>画质</span>
             <div
               role='group'
-              aria-label='Preferred video quality'
+              aria-label='首选视频画质'
               className='inline-flex rounded-full border border-white/10 bg-white/[0.03] p-0.5'
             >
               {(['hd', 'sd'] as const).map((q) => (
@@ -1461,7 +1418,7 @@ export function DownloaderApp() {
                       : 'text-white/55 hover:text-white'
                   }`}
                 >
-                  {q === 'hd' ? 'HD' : 'Data saver'}
+                  {q === 'hd' ? '高清' : '省流'}
                 </button>
               ))}
             </div>
@@ -1471,8 +1428,6 @@ export function DownloaderApp() {
 
       {/* Pro-only batch queue — self-hides for free users, so no conditional
           is needed at the call site. */}
-      <BatchPanel />
-
       {/* Recent — locally-stored links (never leaves the device). Stays on
           screen alongside a result: it is the way back to an earlier link, and
           hiding it exactly when you have something to compare against is when
@@ -1483,7 +1438,7 @@ export function DownloaderApp() {
           <div className='mb-2 flex items-center justify-between'>
             <span className='flex items-center gap-1.5 text-xs font-medium text-white/50'>
               <ClockIcon className='h-3.5 w-3.5' />
-              Recent
+              最近记录
             </span>
             <button
               type='button'
@@ -1491,7 +1446,7 @@ export function DownloaderApp() {
               className='flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-white/50 transition-colors hover:text-white/80'
             >
               <TrashIcon className='h-3 w-3' />
-              Clear
+              清空
             </button>
           </div>
           <ul
@@ -1533,14 +1488,14 @@ export function DownloaderApp() {
                     <span className='block truncate text-[10px] text-white/50'>
                       {h.author ||
                         (h.platform ? PLATFORM_DISPLAY[h.platform] : '') ||
-                        'Saved link'}
+                        '已保存链接'}
                     </span>
                   </span>
                 </button>
                 <button
                   type='button'
                   onClick={() => removeHistory(h.url)}
-                  aria-label={`Remove ${h.title} from recent`}
+                  aria-label={`从最近记录删除 ${h.title}`}
                   className='absolute top-1/2 right-1.5 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-md text-white/30 transition-colors hover:bg-white/10 hover:text-white/70'
                 >
                   <span aria-hidden className='text-base leading-none'>
@@ -1557,7 +1512,7 @@ export function DownloaderApp() {
               onClick={() => setShowAllHistory((v) => !v)}
               className='card-hover mt-2 w-full rounded-lg border border-white/[0.06] py-1.5 text-center text-[11px] font-medium text-white/50 hover:text-white/80'
             >
-              {showAllHistory ? 'Show less' : `View all (${history.length})`}
+              {showAllHistory ? '收起' : `查看全部（${history.length}）`}
             </button>
           )}
         </div>
@@ -1566,8 +1521,6 @@ export function DownloaderApp() {
       {/* Install nudge — secondary, so it sits below the paste bar, controls and
           Recent rather than interrupting the core flow. Installing registers the
           Android share target (share a link straight from TikTok/IG/YouTube). */}
-      {!state.videoMetadata && !state.loading && <InstallPrompt />}
-
       {/* Results — expand directly under the paste bar.
           scroll-mt-24: the success handler calls scrollIntoView({block:'start'}),
           which pins this section flush to the viewport top. On mobile the
@@ -1598,21 +1551,6 @@ export function DownloaderApp() {
             and is not waiting on anything — the one moment an ask is not an
             interruption. It reads as a footnote to the confirmation above it
             rather than a second banner. */}
-        {isSuccessMessage(state.message) && (
-          <ProNudge
-            id='post-download'
-            tone='attached'
-            action={`Support this — $${SUPPORT_PRICES.monthly}/month`}
-            lede={
-              <>
-                Saved you some time? This site is free to use and not free to
-                run — supporters get the batch queue, ZIP bundles, priority on
-                every link and no sponsor card, switched on automatically.
-              </>
-            }
-          />
-        )}
-
         {/* Batch mode: show a compact per-link progress line instead of the
             single-result skeleton while a pasted list resolves. */}
         {batch && (
@@ -1625,10 +1563,10 @@ export function DownloaderApp() {
             <div className='flex items-center justify-between text-sm text-white/80'>
               <span className='flex items-center gap-2'>
                 <SpinnerIcon className='h-4 w-4' />
-                Resolving link {Math.min(batch.done + 1, batch.total)} of{' '}
-                {batch.total}…
+                正在解析第 {Math.min(batch.done + 1, batch.total)}/
+                {batch.total} 个链接…
               </span>
-              <span className='text-xs text-white/50'>{batch.saved} saved</span>
+              <span className='text-xs text-white/50'>已成功 {batch.saved} 个</span>
             </div>
             <div className='h-1.5 w-full overflow-hidden rounded-full bg-white/10'>
               <div
@@ -1654,7 +1592,7 @@ export function DownloaderApp() {
                 {state.videoMetadata.thumbnail && (
                   <img
                     src={state.videoMetadata.thumbnail}
-                    alt='Video thumbnail'
+                    alt='作品缩略图'
                     loading='lazy'
                     decoding='async'
                     className='w-16 h-16 md:w-20 md:h-20 rounded-lg object-cover flex-shrink-0'
@@ -1668,7 +1606,7 @@ export function DownloaderApp() {
                     {state.videoMetadata.title}
                   </h3>
                   <p className='text-white/70 text-xs md:text-sm mt-1'>
-                    by {state.videoMetadata.author}
+                    作者：{state.videoMetadata.author || '未知作者'}
                   </p>
                   {state.videoMetadata.duration > 0 && (
                     <p className='text-white/50 text-xs mt-1'>
@@ -1692,33 +1630,33 @@ export function DownloaderApp() {
                         >
                       > = {
                         tiktok: {
-                          label: 'View on TikTok',
+                          label: '在 TikTok 查看原作品',
                           Icon: TikTokIcon,
                           color: 'text-pink-400 hover:text-pink-300',
                         },
                         twitter: {
-                          label: 'View on Twitter/X',
+                          label: '在 X 查看原作品',
                           Icon: TwitterXIcon,
                           color: 'text-sky-400 hover:text-sky-300',
                         },
                         instagram: {
-                          label: 'View on Instagram',
+                          label: '在 Instagram 查看原作品',
                           Icon: InstagramIcon,
                           color: 'text-fuchsia-400 hover:text-fuchsia-300',
                         },
                         facebook: {
-                          label: 'View on Facebook',
+                          label: '在 Facebook 查看原作品',
                           Icon: FacebookIcon,
                           color: 'text-blue-400 hover:text-blue-300',
                         },
                         youtube: {
-                          label: 'View on YouTube',
+                          label: '在 YouTube 查看原作品',
                           Icon: YouTubeIcon,
                           color: 'text-red-400 hover:text-red-300',
                         },
                       }
                       const fallback = {
-                        label: 'View original post',
+                        label: '查看原作品',
                         Icon: ExternalLinkIcon,
                         color: 'text-cyan-400 hover:text-cyan-300',
                       }
@@ -1746,7 +1684,7 @@ export function DownloaderApp() {
                   className='btn-ghost btn-press w-full py-2.5 px-4 font-semibold rounded-xl flex items-center justify-center text-sm md:text-base'
                 >
                   <span className='relative'>
-                    {state.showPreview ? 'Hide preview' : 'Show preview'}
+                    {state.showPreview ? '隐藏预览' : '显示预览'}
                   </span>
                 </button>
               )}
@@ -1789,15 +1727,15 @@ export function DownloaderApp() {
                           dispatch({
                             type: 'SET_MESSAGE',
                             payload:
-                              'Preview unavailable, but download should work',
+                              '视频预览不可用，但下载通常仍可正常进行。',
                           })
                         }}
                       >
-                        Your browser does not support the video tag.
+                        当前浏览器不支持视频预览。
                       </video>
                     </div>
                     <p className='text-white/50 text-xs text-center'>
-                      Press play to preview — nothing streams until you do.
+                      点击播放后才会加载媒体流，未播放时不会消耗流量。
                     </p>
                   </div>
                 )}
@@ -1819,8 +1757,8 @@ export function DownloaderApp() {
                   </div>
                   <p className='text-white/50 text-xs text-center'>
                     {state.downloadUrl
-                      ? 'Preview via YouTube — use the buttons below to download.'
-                      : 'Playing via YouTube — direct download isn’t available for this video.'}
+                      ? '正在通过 YouTube 预览，可使用下方按钮下载。'
+                      : '正在通过 YouTube 播放，此视频暂时没有可用的直接下载地址。'}
                   </p>
                 </div>
               )}
@@ -1833,11 +1771,11 @@ export function DownloaderApp() {
                     <div className='flex-1 min-w-0'>
                       <p className='text-sm font-semibold truncate'>
                         {state.videoMetadata.musicTitle ||
-                          'Slideshow soundtrack'}
+                          '图集背景音乐'}
                       </p>
                       {state.videoMetadata.musicAuthor && (
                         <p className='text-xs text-white/60 truncate'>
-                          by {state.videoMetadata.musicAuthor}
+                          作者：{state.videoMetadata.musicAuthor}
                         </p>
                       )}
                     </div>
@@ -1851,7 +1789,7 @@ export function DownloaderApp() {
                     preload='none'
                     className='w-full'
                   >
-                    Your browser does not support the audio element.
+                    当前浏览器不支持音频预览。
                   </audio>
                 </div>
               )}
@@ -1866,8 +1804,8 @@ export function DownloaderApp() {
                     >
                       <span className='relative'>
                         {state.showImageGallery
-                          ? 'Hide images'
-                          : `Show images (${state.videoMetadata.images.length})`}
+                          ? '隐藏图片'
+                          : `显示图片（${state.videoMetadata.images.length}）`}
                       </span>
                     </button>
 
@@ -1880,20 +1818,20 @@ export function DownloaderApp() {
                       <div className='animate-section-in space-y-3 px-1'>
                         <div className='flex items-center justify-between bg-white/[0.03] border border-white/[0.08] rounded-lg p-3'>
                           <span className='text-white text-sm'>
-                            Select images to download:
+                            选择要下载的图片：
                           </span>
                           <div className='flex space-x-2'>
                             <button
                               onClick={() => selectAllImages(true)}
                               className='btn-grad px-3 py-1 text-xs font-semibold rounded-md transition-[box-shadow] duration-200'
                             >
-                              All
+                              全选
                             </button>
                             <button
                               onClick={() => selectAllImages(false)}
                               className='btn-ghost px-3 py-1 text-xs font-medium rounded-md transition-colors'
                             >
-                              None
+                              全不选
                             </button>
                           </div>
                         </div>
@@ -1922,7 +1860,7 @@ export function DownloaderApp() {
                                     ? 'ring-2 ring-cyan-400'
                                     : 'ring-1 ring-white/10 hover:ring-2 hover:ring-white/60'
                                 }`}
-                                aria-label={`Open image ${index + 1} full size`}
+                                aria-label={`打开第 ${index + 1} 张图片`}
                               >
                                 {/* object-contain shows the whole image (never
                                     cropped). No hover scale — scaling a
@@ -1930,7 +1868,7 @@ export function DownloaderApp() {
                                     (overflow-hidden) and look cropped on hover. */}
                                 <img
                                   src={image.thumbnail}
-                                  alt={`Slideshow image ${index + 1}`}
+                                  alt={`第 ${index + 1} 张图片`}
                                   className='h-full w-full object-contain'
                                   loading='lazy'
                                   decoding='async'
@@ -1950,8 +1888,8 @@ export function DownloaderApp() {
                                 aria-pressed={image.selected}
                                 aria-label={
                                   image.selected
-                                    ? `Deselect image ${index + 1}`
-                                    : `Select image ${index + 1}`
+                                    ? `取消选择第 ${index + 1} 张图片`
+                                    : `选择第 ${index + 1} 张图片`
                                 }
                                 className={`absolute top-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-full border-2 backdrop-blur-sm transition-all duration-200 ${
                                   image.selected
@@ -1969,7 +1907,7 @@ export function DownloaderApp() {
                               </div>
 
                               <div className='pointer-events-none absolute inset-x-1.5 bottom-1.5 rounded bg-black/40 px-1.5 py-0.5 text-center text-[10px] text-white/80 opacity-0 transition-opacity group-hover:opacity-100'>
-                                Click to preview
+                                点击预览
                               </div>
                             </div>
                           ))}
@@ -1993,13 +1931,13 @@ export function DownloaderApp() {
                               htmlFor='downloadAsZip'
                               className='text-white text-sm'
                             >
-                              Download as ZIP file
+                              打包为 ZIP 文件
                             </label>
                           </div>
                           <p className='text-white/60 text-xs'>
                             {state.downloadImagesAsZip
-                              ? 'Images will be packaged into a single ZIP file'
-                              : 'Images will be downloaded individually'}
+                              ? '所选图片将打包成一个 ZIP 文件'
+                              : '所选图片将分别下载'}
                           </p>
                         </div>
 
@@ -2016,17 +1954,17 @@ export function DownloaderApp() {
                           {state.downloadingImages ? (
                             <>
                               <SpinnerIcon className='flex-shrink-0 h-4 w-4' />
-                              <span>Downloading...</span>
+                              <span>正在下载…</span>
                             </>
                           ) : (
                             <>
                               <DownloadIcon className='flex-shrink-0 h-5 w-5' />
                               <span>
-                                Download Selected (
+                                下载所选图片（
                                 {state.videoMetadata?.images?.filter(
                                   (img) => img.selected,
                                 ).length || 0}
-                                )
+                                ）
                               </span>
                             </>
                           )}
@@ -2055,7 +1993,7 @@ export function DownloaderApp() {
                   { key: 'hd', label: 'HD', onPick: () => reResolve('video', 'hd') },
                   {
                     key: 'sd',
-                    label: 'Data saver',
+                    label: '省流',
                     onPick: () => reResolve('video', 'sd'),
                   },
                   {
@@ -2066,10 +2004,10 @@ export function DownloaderApp() {
                 ]
                 return (
                   <div className='flex items-center justify-center gap-2 text-xs'>
-                    <span className='text-white/50'>Get it as</span>
+                    <span className='text-white/50'>重新获取</span>
                     <div
                       role='group'
-                      aria-label='Re-download as'
+                      aria-label='重新选择下载格式'
                       className='inline-flex rounded-full border border-white/10 bg-white/[0.03] p-0.5'
                     >
                       {options.map((o) => {
@@ -2137,8 +2075,8 @@ export function DownloaderApp() {
                             <span>
                               {state.videoMetadata?.isPhotoCarousel &&
                               !state.downloadUrl
-                                ? 'Rendering...'
-                                : 'Downloading...'}
+                                ? '正在生成…'
+                                : '正在下载…'}
                             </span>
                           </span>
                         ) : (
@@ -2146,8 +2084,8 @@ export function DownloaderApp() {
                             <DownloadIcon className='flex-shrink-0 h-5 w-5' />
                             <span>
                               {state.videoMetadata?.isPhotoCarousel
-                                ? 'Video (slideshow)'
-                                : 'Video'}
+                                ? '视频（图集）'
+                                : '下载视频'}
                             </span>
                           </span>
                         )}
@@ -2165,15 +2103,15 @@ export function DownloaderApp() {
                         {state.downloadingAudio ? (
                           <span className='relative flex items-center gap-2'>
                             <SpinnerIcon className='flex-shrink-0 h-4 w-4' />
-                            <span>Downloading...</span>
+                            <span>正在下载…</span>
                           </span>
                         ) : (
                           <span className='relative flex items-center gap-2'>
                             <MusicIcon className='flex-shrink-0 h-5 w-5' />
                             <span>
                               {state.videoMetadata?.isPhotoCarousel
-                                ? 'Download Audio'
-                                : 'Extract Audio'}
+                                ? '下载音频'
+                                : '提取音频'}
                             </span>
                           </span>
                         )}
@@ -2190,8 +2128,8 @@ export function DownloaderApp() {
                 !!state.downloadUrl &&
                 !state.videoMetadata?.isPhotoCarousel && (
                   <p className='text-center text-[11px] leading-relaxed text-white/50'>
-                    On iPhone it saves to Files. To add it to Photos, open the
-                    file, tap Share, then Save Video.
+                    iPhone 会先保存到“文件”。如需加入“照片”，请打开文件，
+                    点击“共享”，再选择“存储视频”。
                   </p>
                 )}
 
@@ -2204,7 +2142,7 @@ export function DownloaderApp() {
                   if (!isDownloading) {
                     return (
                       <p className='text-white/50 text-xs text-center'>
-                        Click to download your content
+                        点击上方按钮下载解析结果
                       </p>
                     )
                   }
@@ -2227,8 +2165,8 @@ export function DownloaderApp() {
                       </div>
                       <p className='text-center text-xs text-white/50'>
                         {pct === null
-                          ? 'Preparing your download…'
-                          : `Downloading… ${pct}%`}
+                          ? '正在准备下载…'
+                          : `正在下载… ${pct}%`}
                       </p>
                     </div>
                   )
@@ -2236,12 +2174,6 @@ export function DownloaderApp() {
             </Surface>
           )}
         </div>
-
-      {/* Sponsor card — only after a result exists, never while resolving or
-          downloading, and always below the download controls. */}
-      {state.videoMetadata && !isResolvingOrDownloading(state) && (
-        <PromoSlot placement='post-result' platform={state.videoMetadata.platform} />
-      )}
 
       {lightboxIndex !== null && state.videoMetadata?.images && (
         <ImageLightbox

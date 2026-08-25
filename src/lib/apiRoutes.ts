@@ -36,6 +36,13 @@ import {
   handleLogout,
   handleRefresh,
 } from './auth/routes'
+import {
+  handlePrivateLogin,
+  handlePrivateLogout,
+  handlePrivateStatus,
+  PRIVATE_AUTH_HEADER,
+  type PrivateAccessEnv,
+} from './privateAccess'
 
 // A scoped `import type`, not the ambient global from `wrangler types`.
 //
@@ -56,7 +63,7 @@ import type { D1Database } from '@cloudflare/workers-types'
  * call these same functions with no `env`, so a handler that needs a binding
  * must degrade rather than throw — see `requireDb`.
  */
-export interface WorkerEnv {
+export interface WorkerEnv extends PrivateAccessEnv {
   DB?: D1Database
 }
 
@@ -194,6 +201,7 @@ export function resolveFailure(error: unknown, fallback: string): Response {
 export async function handleDownload(
   request: Request,
   ctx?: WaitUntilContext,
+  _env?: WorkerEnv,
 ): Promise<Response> {
   try {
     const { url, type = 'video', quality, format } = await request.json()
@@ -233,7 +241,14 @@ export async function handleDownload(
      * and is never offered for sale, bundled with Pro, or derivable from one.
      * `=== true` rather than a truthy check: an absent claim must read as false.
      */
-    const credentialed = claims?.c === true
+    const privateAuth = request.headers.get(PRIVATE_AUTH_HEADER)
+    const privateAuthenticated = privateAuth === 'web' || privateAuth === 'api'
+    // The operator's Instagram session is never attached to anonymous traffic
+    // or to another platform. The Worker adds the trusted internal header only
+    // after web-session/API-key verification; external callers cannot mint it.
+    const credentialed =
+      platform === 'instagram' &&
+      (privateAuthenticated || claims?.c === true)
 
     // Serve an identical recent resolve from cache — skips a full extractor
     // round-trip for repeats (double-tap, HD/SD/MP3 re-pick, Recent re-tap, or
@@ -443,6 +458,114 @@ export async function handleImages(request: Request): Promise<Response> {
 }
 
 /**
+ * Shortcut-friendly resolver.
+ *
+ * This route accepts exactly one link and is intentionally API-key only. The
+ * Worker authenticates `Authorization: Bearer …` / `X-API-Key`, strips any
+ * caller-supplied internal header, then marks the request as `api`. Keys are
+ * never accepted in the URL, where access logs and share sheets would expose
+ * them.
+ *
+ * Returned media paths are absolute so iOS Shortcuts can fetch them directly.
+ * Same-origin proxy URLs still require the same API Key on the subsequent GET;
+ * direct Cobalt tunnels are already short-lived signed URLs.
+ */
+export async function handleShortcutResolve(
+  request: Request,
+  ctx?: WaitUntilContext,
+  env?: WorkerEnv,
+): Promise<Response> {
+  if (request.headers.get(PRIVATE_AUTH_HEADER) !== 'api') {
+    return Response.json(
+      { success: false, error: '快捷指令接口必须使用 API Key。' },
+      { status: 401, headers: { 'Cache-Control': 'no-store' } },
+    )
+  }
+
+  let input: { url?: unknown; quality?: unknown; format?: unknown }
+  try {
+    input = (await request.json()) as typeof input
+  } catch {
+    return Response.json(
+      { success: false, error: '请求必须是 JSON 格式。' },
+      { status: 400 },
+    )
+  }
+
+  const url = typeof input.url === 'string' ? input.url.trim() : ''
+  if (!url) {
+    return Response.json(
+      { success: false, error: '缺少 url。' },
+      { status: 400 },
+    )
+  }
+
+  const origin = new URL(request.url).origin
+  const headers = new Headers({ 'Content-Type': 'application/json' })
+  headers.set(PRIVATE_AUTH_HEADER, 'api')
+  const internal = new Request(`${origin}/api/download`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      url,
+      quality: input.quality === 'sd' ? 'sd' : 'hd',
+      format: input.format === 'audio' ? 'audio' : 'video',
+    }),
+  })
+  const resolved = await handleDownload(internal, ctx, env)
+  const payload = (await resolved.json()) as {
+    success?: boolean
+    error?: string
+    downloadUrl?: string
+    audioUrl?: string
+    metadata?: {
+      title?: string
+      author?: string
+      platform?: string
+      thumbnail?: string
+      directVideoUrl?: string
+      directAudioUrl?: string
+      images?: Array<{ url?: string; thumbnail?: string }>
+    }
+  }
+  if (!resolved.ok || !payload.success) {
+    return Response.json(
+      { success: false, error: payload.error || '解析失败。' },
+      { status: resolved.status, headers: { 'Cache-Control': 'no-store' } },
+    )
+  }
+
+  const absolute = (value?: string) =>
+    value ? new URL(value, origin).toString() : undefined
+  const images = (payload.metadata?.images || [])
+    .map((image) => absolute(image.url))
+    .filter((value): value is string => Boolean(value))
+  const video = absolute(
+    payload.metadata?.directVideoUrl || payload.downloadUrl,
+  )
+  const audio = absolute(
+    payload.metadata?.directAudioUrl || payload.audioUrl,
+  )
+
+  return Response.json(
+    {
+      success: true,
+      platform: payload.metadata?.platform || 'unknown',
+      type: images.length ? (images.length > 1 ? 'images' : 'image') : audio && !video ? 'audio' : 'video',
+      title: payload.metadata?.title || '未命名媒体',
+      author: payload.metadata?.author || '未知作者',
+      thumbnail: absolute(payload.metadata?.thumbnail),
+      video_url: video,
+      audio_url: audio,
+      image_urls: images,
+      note:
+        '以本站 /api/ 开头的媒体地址，下载时仍需携带相同的 X-API-Key 或 Bearer Key。',
+    },
+    { headers: { 'Cache-Control': 'no-store' } },
+  )
+}
+
+/**
  * The three routes backed by yt-dlp/ffmpeg. workerd has neither subprocesses
  * nor a writable filesystem, so on Cloudflare they can only ever answer 501 —
  * which the Worker does here without loading Next or the route's own module.
@@ -468,6 +591,7 @@ function nativeMediaRoute(feature: string): Handler {
  */
 export const API_ROUTES: Record<string, { method: string; handler: Handler }> = {
   '/api/download': { method: 'POST', handler: handleDownload },
+  '/api/shortcut/resolve': { method: 'POST', handler: handleShortcutResolve },
   '/api/images': { method: 'POST', handler: handleImages },
   '/api/slideshow': { method: 'POST', handler: nativeMediaRoute('Slideshow rendering') },
   '/api/tiktok': { method: 'GET', handler: nativeMediaRoute('Direct TikTok download') },
@@ -482,6 +606,9 @@ export const API_ROUTES: Record<string, { method: string; handler: Handler }> = 
   '/api/auth/refresh': { method: 'POST', handler: handleRefresh },
   '/api/auth/logout': { method: 'POST', handler: handleLogout },
   '/api/account': { method: 'POST', handler: handleAccount },
+  '/api/private/login': { method: 'POST', handler: handlePrivateLogin },
+  '/api/private/status': { method: 'GET', handler: handlePrivateStatus },
+  '/api/private/logout': { method: 'POST', handler: handlePrivateLogout },
   ...Object.fromEntries(
     Object.entries(MEDIA_PROXY_HANDLERS).map(([pathname, handler]) => [
       pathname,

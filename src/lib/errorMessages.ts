@@ -30,60 +30,60 @@ export function friendlyError(raw: string | undefined, url?: string): FriendlyEr
 
   if (looksInstagramStory || (STORY.test(text) && PRIVATE.test(text))) {
     return {
-      title: 'Stories need a logged-in session',
-      hint: 'Instagram only serves stories & highlights to signed-in accounts, so they can’t be fetched anonymously here.',
+      title: '快拍需要登录会话',
+      hint: 'Instagram 只向已登录账号提供快拍和精选内容，请配置有效的 Instagram Cookie。',
     }
   }
   if (PUBLIC_INSTAGRAM_RESOLVER.test(text)) {
     return {
-      title: 'Instagram public resolver unavailable',
-      hint: 'The post may still be public. Instagram or the fallback service refused this request; wait a moment and try again.',
+      title: 'Instagram 公共解析暂不可用',
+      hint: '作品可能仍是公开的，但 Instagram 或备用解析服务拒绝了请求；可稍后重试，或配置安全的 Instagram Cookie。',
     }
   }
   if (AGE.test(text)) {
     return {
-      title: 'Age-restricted content',
-      hint: 'The platform gates this behind an age check, so it can’t be resolved without a logged-in account.',
+      title: '内容有年龄限制',
+      hint: '平台要求通过年龄验证；请使用符合年龄要求的专用账号 Cookie。',
     }
   }
   if (PRIVATE.test(text)) {
     return {
-      title: 'This post is private or login-only',
-      hint: 'Only public posts can be downloaded. Make sure the account and post are public, then try again.',
+      title: '作品为私密或需要登录',
+      hint: '请确认账号和作品公开；若平台仍要求登录，请配置有效 Cookie 后重试。',
     }
   }
   if (REGION.test(text)) {
     return {
-      title: 'Region-locked content',
-      hint: 'The source restricts this by country and blocks our server’s region.',
+      title: '内容有地区限制',
+      hint: '来源平台限制了服务器所在地区，当前无法解析。',
     }
   }
   if (GONE.test(text)) {
     return {
-      title: 'Post unavailable',
-      hint: 'It may have been deleted or made private. Double-check the link opens in a browser.',
+      title: '作品不可用',
+      hint: '作品可能已删除或改为私密，请先确认链接能在浏览器中打开。',
     }
   }
   if (UNSUPPORTED.test(text)) {
     return {
-      title: 'Unsupported or malformed link',
-      hint: 'Paste a full post URL (e.g. the share link) from a supported platform.',
+      title: '链接不受支持或格式错误',
+      hint: '请粘贴受支持平台的完整作品分享链接。',
     }
   }
   if (RATE.test(text)) {
     return {
-      title: 'Temporarily rate-limited',
-      hint: 'The source is throttling requests right now. Wait a minute and try again.',
+      title: '请求暂时受限',
+      hint: '来源平台正在限制请求频率，请稍候一分钟再试。',
     }
   }
   if (NETWORK.test(text)) {
     return {
-      title: 'Network hiccup',
-      hint: 'The request timed out. Check your connection and try again.',
+      title: '网络请求失败',
+      hint: '请求超时，请检查网络连接后重试。',
     }
   }
   return {
-    title: 'Couldn’t process this link',
-    hint: text || 'Something went wrong resolving the media. Try again in a moment.',
+    title: '无法解析此链接',
+    hint: text || '解析媒体时发生错误，请稍后重试。',
   }
 }

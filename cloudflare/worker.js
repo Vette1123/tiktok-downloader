@@ -21,6 +21,10 @@
  */
 
 import { API_ROUTES } from '../src/lib/apiRoutes'
+import {
+  authorizePrivateRequest,
+  PRIVATE_AUTH_HEADER,
+} from '../src/lib/privateAccess'
 
 /**
  * There is deliberately no 404 handling here.
@@ -57,6 +61,48 @@ import { API_ROUTES } from '../src/lib/apiRoutes'
  * everything else to the canonical origin.
  */
 const WEBHOOK_PATH = '/api/billing/webhook'
+const PROTECTED_API_PATHS = new Set([
+  '/api/download',
+  '/api/shortcut/resolve',
+  '/api/images',
+  '/api/slideshow',
+  '/api/tiktok',
+  '/api/youtube',
+  '/api/image',
+  '/api/video',
+  '/api/audio',
+  '/api/thumb',
+])
+const RESOLVE_PATHS = new Set(['/api/download', '/api/shortcut/resolve'])
+const RESOLVE_WINDOW_MS = 60_000
+const RESOLVE_MAX_PER_WINDOW = 30
+const resolveWindows = new Map()
+
+function rateLimitResolve(request, kind) {
+  const now = Date.now()
+  const address =
+    request.headers.get('cf-connecting-ip') ||
+    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    'unknown'
+  const key = `${kind}:${address}`
+  const current = resolveWindows.get(key)
+  const next =
+    current && current.resetAt > now
+      ? { count: current.count + 1, resetAt: current.resetAt }
+      : { count: 1, resetAt: now + RESOLVE_WINDOW_MS }
+  resolveWindows.set(key, next)
+
+  if (resolveWindows.size > 1000) {
+    for (const [entryKey, value] of resolveWindows) {
+      if (value.resetAt <= now || resolveWindows.size > 800) {
+        resolveWindows.delete(entryKey)
+      }
+    }
+  }
+
+  if (next.count <= RESOLVE_MAX_PER_WINDOW) return null
+  return Math.max(1, Math.ceil((next.resetAt - now) / 1000))
+}
 function isWorkersDev(hostname) {
   return hostname.endsWith('.workers.dev')
 }
@@ -111,6 +157,54 @@ const worker = {
       if (!methodMatches(request.method, route.method)) {
         return methodNotAllowed(route.method)
       }
+
+      // Static HTML is still served directly by Cloudflare Assets and costs no
+      // Worker invocation. Every route that can spend resolver requests or
+      // proxy media bytes is protected here, before any extractor runs.
+      //
+      // The caller cannot forge PRIVATE_AUTH_HEADER: it is removed first and
+      // re-added only after a signed web session or API key succeeds.
+      if (PROTECTED_API_PATHS.has(url.pathname)) {
+        const auth = await authorizePrivateRequest(request, env)
+        if (!auth.ok) {
+          return Response.json(
+            {
+              success: false,
+              error: '未登录或 API Key 无效，已拒绝本次请求。',
+            },
+            {
+              status: 401,
+              headers: {
+                'Cache-Control': 'no-store',
+                'WWW-Authenticate': 'Bearer realm="private downloader"',
+              },
+            },
+          )
+        }
+        if (RESOLVE_PATHS.has(url.pathname)) {
+          const retryAfter = rateLimitResolve(request, auth.kind || 'web')
+          if (retryAfter) {
+            return Response.json(
+              {
+                success: false,
+                error: '解析请求过于频繁，请稍后再试。',
+              },
+              {
+                status: 429,
+                headers: {
+                  'Cache-Control': 'no-store',
+                  'Retry-After': String(retryAfter),
+                },
+              },
+            )
+          }
+        }
+        const headers = new Headers(request.headers)
+        headers.delete(PRIVATE_AUTH_HEADER)
+        headers.set(PRIVATE_AUTH_HEADER, auth.kind || 'web')
+        request = new Request(request, { headers })
+      }
+
       // `ctx` is forwarded so a handler can defer work past the response —
       // /api/download writes its edge-cache entry that way, keeping the cache
       // write off the client's critical path. Handlers that don't need it
