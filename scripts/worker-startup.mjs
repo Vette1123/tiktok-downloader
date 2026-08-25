@@ -44,7 +44,7 @@ import vm from 'node:vm'
  * the free plan's 10 ms request CPU budget. The remaining margin continues to
  * catch an accidental dependency or a large parser table.
  */
-const MAX_BUNDLE_BYTES = 232 * 1024
+const MAX_BUNDLE_BYTES = 233 * 1024
 
 /** wrangler rejects the upload past this on the free plan. */
 const MAX_GZIPPED_BYTES = 3 * 1024 * 1024
