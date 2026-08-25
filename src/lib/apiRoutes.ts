@@ -154,7 +154,10 @@ export function resolveCacheKey(
   mode: 'auto' | 'audio',
   url: string,
 ): string {
-  return `${type}|${quality}|${mode}|${url}`
+  // Bump when the normaliser's media classification changes. Otherwise a
+  // previously cached, misclassified Xiaohongshu image post could keep
+  // returning the old bogus video payload for the cache TTL after deployment.
+  return `resolve-v2|${type}|${quality}|${mode}|${url}`
 }
 
 /**

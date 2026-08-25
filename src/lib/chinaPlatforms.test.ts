@@ -134,6 +134,58 @@ describe('IF-PHP response normalisation', () => {
     )
   })
 
+  it('recognises extensionless image URLs from an image-typed Xiaohongshu note', () => {
+    const parsed = parseIfphpPayload(
+      {
+        code: 200,
+        data: {
+          id: '6a890eda000000003a02d0d8',
+          type: 'image',
+          title: '普通日子，靠穿搭给自己一点氛围感',
+          url: 'https://sns-webpic-qc.xhscdn.com/20260825/example!nd_dft_wlteh_webp_3',
+        },
+      },
+      'https://www.xiaohongshu.com/discovery/item/6a890eda000000003a02d0d8',
+      'xiaohongshu',
+    )
+    expect(parsed?.downloadUrl).toBe('')
+    expect(parsed?.images).toHaveLength(1)
+    expect(parsed?.images?.[0]?.url).toContain('sns-webpic-qc.xhscdn.com')
+  })
+
+  it('recognises XHS img collections without turning a video cover into a gallery', () => {
+    const imagePost = parseIfphpPayload(
+      {
+        code: 200,
+        data: {
+          type: 'image',
+          img: ['https://sns-webpic-qc.xhscdn.com/example-image'],
+        },
+      },
+      'https://www.xiaohongshu.com/discovery/item/image-note',
+      'xiaohongshu',
+    )
+    expect(imagePost?.downloadUrl).toBe('')
+    expect(imagePost?.images).toHaveLength(1)
+
+    const videoPost = parseIfphpPayload(
+      {
+        code: 200,
+        data: {
+          type: 'video',
+          video: { play_url: 'https://sns-video-hs.xhscdn.com/example.mp4' },
+          cover: 'https://sns-webpic-qc.xhscdn.com/example-cover',
+        },
+      },
+      'https://www.xiaohongshu.com/discovery/item/video-note',
+      'xiaohongshu',
+    )
+    expect(videoPost?.downloadUrl).toBe(
+      'https://sns-video-hs.xhscdn.com/example.mp4',
+    )
+    expect(videoPost?.images).toBeUndefined()
+  })
+
   it('keeps a normal Xiaohongshu video when no image list exists', () => {
     const parsed = parseIfphpPayload(
       {

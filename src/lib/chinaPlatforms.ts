@@ -239,7 +239,37 @@ function stringAtPath(value: unknown, keys: readonly string[]): string {
   return ''
 }
 
-function mediaFromObject(value: unknown): { videos: string[]; images: string[] } {
+function isXiaohongshuImagePost(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false
+  const root = value as Record<string, unknown>
+  const candidates = [root, root.data].filter(
+    (item): item is Record<string, unknown> =>
+      !!item && typeof item === 'object' && !Array.isArray(item),
+  )
+  for (const candidate of candidates) {
+    for (const key of [
+      'type',
+      'media_type',
+      'mediaType',
+      'note_type',
+      'noteType',
+      'content_type',
+      'contentType',
+    ]) {
+      const kind = text(candidate[key]).toLowerCase()
+      if (/^(?:image|images|photo|picture|图文|图片|静态图)$/.test(kind)) {
+        return true
+      }
+    }
+  }
+  return false
+}
+
+function mediaFromObject(
+  value: unknown,
+  platform?: ChinesePlatform,
+  imagePost = false,
+): { videos: string[]; images: string[] } {
   const videos: string[] = []
   const images: string[] = []
   const seen = new Set<unknown>()
@@ -249,16 +279,41 @@ function mediaFromObject(value: unknown): { videos: string[]; images: string[] }
     if (current && typeof current === 'object') seen.add(current)
     if (typeof current === 'string' && /^https?:\/\//i.test(current)) {
       const normalized = unescapePage(current)
+      const videoFile = /\.(?:mp4|m4v|mov|webm)(?:[?#]|$)/i.test(normalized)
+      const imagePath = /(?:images?|image_list|photo_list|photos?|pics?|img)/i.test(
+        keyPath,
+      )
+      const coverPath = /(?:cover|thumbnail|thumb|poster|avatar|pic)(?:[._]|$)/i.test(
+        keyPath,
+      )
+      const imageFile = /\.(?:jpe?g|png|webp|gif|avif|heic)(?:[?#]|$)/i.test(
+        normalized,
+      )
+      const xhsImageHost =
+        platform === 'xiaohongshu' &&
+        /(?:xhscdn\.com|sns-webpic|sns-img)/i.test(normalized)
+      const directMediaUrl = /(?:^|\.)(?:url|src|image_url|imageUrl)$/i.test(
+        keyPath,
+      )
+
+      // Xiaohongshu image URLs often omit a file extension (for example the
+      // `!nd_dft_wlteh_webp_3` suffix). Treat explicit image collections, or
+      // an image-typed note's direct media URL, as images before the generic
+      // `url`/`download` video heuristic gets a chance to claim them.
       if (
-        /(?:video|play|wm|nwm|master|origin|download|url)/i.test(keyPath) &&
-        !/\.(?:jpe?g|png|webp)(?:[?#]|$)/i.test(normalized)
-      ) {
-        videos.push(normalized)
-      } else if (
-        /(?:images?|image_list|photo_list|photos?|pics?)/i.test(keyPath) &&
-        /(?:\.(?:jpe?g|png|webp)(?:[?#]|$)|xhscdn|sns-webpic)/i.test(normalized)
+        platform === 'xiaohongshu' &&
+        !videoFile &&
+        !coverPath &&
+        (imagePath ||
+          (imagePost && directMediaUrl) ||
+          (directMediaUrl && (imageFile || xhsImageHost)))
       ) {
         images.push(normalized)
+      } else if (
+        /(?:video|play|wm|nwm|master|origin|download|url)/i.test(keyPath) &&
+        !imageFile
+      ) {
+        videos.push(normalized)
       }
       return
     }
@@ -323,7 +378,11 @@ export function parseIfphpPayload(
   const code = (payload as Record<string, unknown>).code
   const successfulCodes: unknown[] = [0, 200, '0', '200']
   if (code !== undefined && !successfulCodes.includes(code)) return null
-  const media = mediaFromObject(payload)
+  const media = mediaFromObject(
+    payload,
+    platform,
+    platform === 'xiaohongshu' && isXiaohongshuImagePost(payload),
+  )
   const video = media.videos.find((url) => url !== sourceUrl)
   const parsed = result({
     id:
@@ -421,7 +480,11 @@ async function resolveXiaohongshu(sourceUrl: string): Promise<VideoData | null> 
         jsonObjectAfter(html, 'window.__INITIAL_STATE__') ||
         jsonObjectAfter(html, '__INITIAL_STATE__')
       if (!state) return resolveIfphp(sourceUrl, 'xiaohongshu')
-      const media = mediaFromObject(state)
+      const media = mediaFromObject(
+        state,
+        'xiaohongshu',
+        isXiaohongshuImagePost(state),
+      )
       const noteId = page.url.match(/\/(?:discovery\/item|explore)\/([\w-]+)/)?.[1]
       const parsed = result({
         id: stringAtPath(state, ['noteId', 'note_id', 'id']) || noteId || 'xiaohongshu',
