@@ -113,6 +113,18 @@ describe('private access', () => {
     expect(reused.status).toBe(503)
   })
 
+  it('reports safe configuration diagnostics without returning secret values', async () => {
+    const response = await handlePrivateStatus(
+      new Request('https://example.com/api/private/status'),
+      undefined,
+      { ...env, SHORTCUT_API_KEY: 'short' },
+    )
+    await expect(response.json()).resolves.toMatchObject({
+      configured: false,
+      configuration_issues: ['SHORTCUT_API_KEY 未配置或少于 32 个字符'],
+    })
+  })
+
   it('clears the browser session cookie on logout', () => {
     const response = handlePrivateLogout()
     expect(response.headers.get('set-cookie')).toContain('Max-Age=0')

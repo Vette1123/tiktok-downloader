@@ -10,6 +10,7 @@ export function PrivateGate({ children }: { children: React.ReactNode }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [message, setMessage] = useState('')
+  const [configurationIssues, setConfigurationIssues] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
@@ -19,8 +20,10 @@ export function PrivateGate({ children }: { children: React.ReactNode }) {
         const data = (await response.json()) as {
           configured?: boolean
           authenticated?: boolean
+          configuration_issues?: string[]
         }
         if (!active) return
+        setConfigurationIssues(data.configuration_issues || [])
         setState(
           !data.configured
             ? 'unconfigured'
@@ -83,6 +86,17 @@ export function PrivateGate({ children }: { children: React.ReactNode }) {
           WEB_USERNAME、WEB_PASSWORD、SESSION_SECRET 和 SHORTCUT_API_KEY。
           配置完成后刷新本页。
         </p>
+        {configurationIssues.length > 0 && (
+          <div className='rounded-xl border border-amber-300/25 bg-amber-400/10 px-4 py-3 text-sm leading-relaxed text-amber-100'>
+            <p className='font-semibold'>服务器检测到：</p>
+            <ul className='mt-1 list-disc space-y-1 pl-5'>
+              {configurationIssues.map((issue) => (
+                <li key={issue}>{issue}</li>
+              ))}
+            </ul>
+            <p className='mt-2 text-xs text-amber-100/70'>这里只显示配置名称和规则，不会显示机密内容。</p>
+          </div>
+        )}
       </Surface>
     )
   }
@@ -159,4 +173,3 @@ export function PrivateGate({ children }: { children: React.ReactNode }) {
     </div>
   )
 }
-

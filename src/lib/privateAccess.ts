@@ -90,16 +90,32 @@ function cookieValue(request: Request, name: string): string {
   return ''
 }
 
-function configured(env: PrivateAccessEnv): boolean {
+function configurationIssues(env: PrivateAccessEnv): string[] {
+  const username = text(env.WEB_USERNAME)
+  const password = text(env.WEB_PASSWORD)
   const sessionSecret = text(env.SESSION_SECRET)
   const shortcutApiKey = text(env.SHORTCUT_API_KEY)
-  return Boolean(
-    text(env.WEB_USERNAME) &&
-      text(env.WEB_PASSWORD) &&
-      sessionSecret.length >= MIN_SECRET_LENGTH &&
-      shortcutApiKey.length >= MIN_SECRET_LENGTH &&
-      sessionSecret !== shortcutApiKey,
-  )
+  const issues: string[] = []
+  if (!username) issues.push('WEB_USERNAME 未配置')
+  if (!password) issues.push('WEB_PASSWORD 未配置')
+  if (sessionSecret.length < MIN_SECRET_LENGTH) {
+    issues.push('SESSION_SECRET 未配置或少于 32 个字符')
+  }
+  if (shortcutApiKey.length < MIN_SECRET_LENGTH) {
+    issues.push('SHORTCUT_API_KEY 未配置或少于 32 个字符')
+  }
+  if (
+    sessionSecret.length >= MIN_SECRET_LENGTH &&
+    shortcutApiKey.length >= MIN_SECRET_LENGTH &&
+    sessionSecret === shortcutApiKey
+  ) {
+    issues.push('SESSION_SECRET 与 SHORTCUT_API_KEY 不能相同')
+  }
+  return issues
+}
+
+function configured(env: PrivateAccessEnv): boolean {
+  return configurationIssues(env).length === 0
 }
 
 async function createSession(env: PrivateAccessEnv): Promise<string> {
@@ -258,10 +274,13 @@ export async function handlePrivateStatus(
   env: PrivateAccessEnv = {},
 ): Promise<Response> {
   const auth = await authorizePrivateRequest(request, env)
+  const issues = configurationIssues(env)
   return noStoreJson({
     success: true,
-    configured: configured(env),
+    configured: issues.length === 0,
     authenticated: auth.ok && auth.kind === 'web',
+    // Names and validation rules only; never return secret values.
+    configuration_issues: issues,
   })
 }
 
