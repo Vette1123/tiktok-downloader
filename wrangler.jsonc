@@ -25,17 +25,26 @@
   // here needs them: previews happen locally via `pnpm preview`.
   "preview_urls": false,
 
-  // esbuild's --keep-names emits a `__name(fn, "fn")` call per function, all of
-  // which run at module scope — 186 of them here, measured at 0.4 ms of the
-  // ~1 ms this Worker spends evaluating its global scope on every new isolate,
-  // plus 8 KiB of bundle.
+  // Minify the Worker bundle. The bundle size is what a new isolate compiles
+  // before it can answer anything (see scripts/worker-startup.mjs), and this
+  // is by far the largest lever on it: the unminified bundle had reached the
+  // 200 KiB budget with no feature left to remove, and minification halves it
+  // outright rather than trading a capability away for bytes.
   //
-  // It buys nothing in this build. The shim exists so that names survive
-  // minification, and nothing minifies this bundle: all 171 function
-  // declarations are still `function handleDownload(...)` in the emitted
-  // worker.js, so stack traces in `wrangler tail` read exactly the same with it
-  // off. Turn it back on if minify is ever enabled.
-  "keep_names": false,
+  // keep_names goes back on for exactly the reason the old note predicted:
+  // it is what makes names survive minification, and now something minifies.
+  // Measured all three ways on this bundle:
+  //
+  //   no minify, no keep_names   221.3 KiB   4.95 ms   over the 200 KiB budget
+  //   minify + keep_names        106.0 KiB   5.42 ms   `i(Wi,"handleDownload")`
+  //   minify only                 99.9 KiB   4.43 ms   single-letter traces
+  //
+  // The middle row is the one to keep. keep_names costs 6 KiB and ~1 ms of
+  // isolate startup and buys back the only production debugging signal this
+  // Worker has — `wrangler tail` naming the function that threw, rather than
+  // a letter. Half the budget is still free for the next feature.
+  "minify": true,
+  "keep_names": true,
 
   "assets": {
     // `next build` with `output: 'export'` writes the whole site here: 12

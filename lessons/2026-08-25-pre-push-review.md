@@ -4,8 +4,11 @@
 A full pre-push review of the uncommitted universal-downloads / supporter-extras
 work (~4,500 lines across 57 files), then fixing everything it found. Thirteen
 findings: four user-visible falsehoods, three real defects, three formatting
-scars, and three consolidations. Tests went 578 → 616; tsc, eslint and
-`pnpm cf:build` were clean before and after.
+scars, and three consolidations — plus a fourteenth found only at the end,
+when the Worker bundle turned out to be over the CI size gate and the number I
+had reported earlier came from a stale directory. Tests went 578 → 616; tsc,
+eslint and `pnpm cf:build` were clean before and after; the bundle went
+221.3 KiB → 106.0 KiB via `minify`.
 
 ## Mistakes
 - **The FAQ told visitors the batch queue was free. It has never been free.**
@@ -61,6 +64,22 @@ scars, and three consolidations. Tests went 578 → 616; tsc, eslint and
   caught it *before* `writeFileSync`, so the file was untouched — which is the
   only reason this is a footnote and not a fourth scar. Split on `/\r?\n/` and
   work in lines; never match a newline as a byte.
+- **I reported the Worker bundle as 153.5 KiB, comfortably inside budget. It
+  was 221.3 KiB and over.** `pnpm cf:startup` reads whatever sits in
+  `.worker-size-check/`, and that directory held a bundle from an earlier
+  session — so the number was real, precise, and about code that no longer
+  existed. It is the same failure as the 2026-08-19 lesson (a stale `out/`
+  answering a grep), which I had read *that morning*, in this repo's own
+  ledger, and still walked into. The measurement only means something when the
+  build that produced it is part of the same command:
+  `wrangler deploy --dry-run --outdir … && pnpm cf:startup …`, never the second
+  half alone.
+- **And the real number would have failed CI.** `origin/main` was already at
+  **199.64 KiB** against a 200 KiB gate — 0.4 KiB of headroom before a single
+  line of this work. Nobody had removed that headroom; it had simply never been
+  noticed, because the gate only speaks on the build that crosses it. This
+  release added ~21.6 KiB and would have failed the deploy workflow's size step
+  before it ever reached the deploy step.
 
 ## What worked
 - **Running the gate first, reading second.** `pnpm test` / `tsc` / `eslint` /
@@ -75,6 +94,24 @@ scars, and three consolidations. Tests went 578 → 616; tsc, eslint and
   plus `git ls-files --others` copied by path) rather than editing a dirty
   checkout. The 57-entry status and 1,674-line diff matched on both sides before
   a single fix landed.
+- **Attributing the bundle before cutting it.** Walking the sourcemap and
+  charging each generated span to its source turned "it is 21 KiB too big" into
+  a table: `downloader.ts` alone was 96.8 KiB of 221, and the whole of this
+  release's new server code was 12 KiB. That killed the instinct to go carve up
+  the new features — they were not the problem, and removing all of them would
+  not have fixed it.
+- **Reaching for the lever the budget is actually about.** The gate exists to
+  bound how much a new isolate compiles, and nothing minified this bundle —
+  `minify: true` took 221.3 KiB to 106.0 KiB, leaving half the budget free,
+  without trading away one capability. `keep_names` went back on in the same
+  change, which is precisely what the old config comment said to do "if minify
+  is ever enabled": measured at +6 KiB and +1 ms, it keeps `wrangler tail`
+  naming the function that threw.
+- **Smoking the minified bundle, not just weighing it.** Minification changes
+  emitted code, so the size number proves nothing about behaviour. A local
+  `wrangler dev` answered `/api/health` 200, the download validator 400, both
+  new Pro gates 403, and served `/`, `/pro` and `/video-downloader` — including
+  the corrected FAQ strings, with the two false ones grepped for and absent.
 - **Looking for the helper before writing one.** The busy-state predicate,
   the thumbnail i18n keys (`thumbnailBtn`/`thumbnailSaving`/
   `thumbnailUnavailable`, defined and never used) and `saveBlob` all already
@@ -99,3 +136,13 @@ scars, and three consolidations. Tests went 578 → 616; tsc, eslint and
 - A worktree needs a real `node_modules`. A junction to the parent's satisfies
   vitest and tsc, then Turbopack refuses it with "points out of the filesystem
   root" — `pnpm install` in the worktree, or the build gate is not actually run.
+- **Never run `pnpm cf:startup` without the `wrangler --dry-run` that feeds it,
+  in the same command.** It measures a directory, not your code, and a stale
+  directory gives a confident wrong answer — twice now in this repo, from two
+  different stale directories.
+- Check the bundle budget's *headroom*, not just its verdict. `origin/main` sat
+  at 199.64/200 KiB, so the gate was going to fail on whatever landed next
+  regardless of what that was. A budget with no room left is a broken build
+  waiting for a volunteer.
+- Attribute before you cut: walk the sourcemap and charge bytes to sources. The
+  new code is rarely where the bytes are.
