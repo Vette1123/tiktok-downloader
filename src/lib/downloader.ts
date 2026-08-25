@@ -33,6 +33,7 @@ import { getMediaReferer } from './proxyHeaders'
 import { tryYouTubeInnertube } from './youtubeInnertube'
 import { ytdlpInfo } from './ytdlp'
 import {
+  preferXiaohongshuImages,
   resolveChinesePlatform,
   type ChinesePlatform,
 } from './chinaPlatforms'
@@ -782,11 +783,6 @@ export class Downloader {
     'https://co.otomir23.me/',
     'https://rue-cobalt.xenon.zone/',
     'https://cobaltapi.cjs.nz/',
-    // Community endpoint verified by the fork owner. It is deliberately last:
-    // it is useful for Instagram/Xiaohongshu picker results, but has shown
-    // intermittent failures and should remain a fallback rather than the
-    // primary dependency.
-    'https://api.co.rooot.gay/',
   ]
 
   private get cobaltInstances(): string[] {
@@ -935,7 +931,11 @@ export class Downloader {
       // configured/private instance may support more than the public list. It
       // also remains a useful last resort for Xiaohongshu image pickers.
       const fallback = await this.tryCobaltInstances(url)
-      if (fallback) return fallback
+      if (fallback) {
+        return platform === 'xiaohongshu'
+          ? preferXiaohongshuImages(fallback)
+          : fallback
+      }
       throw new Error(
         `${platform} 解析失败。请确认作品公开可访问；抖音受风控时还需要在 Worker 中配置 IFPHP_API_KEY。`,
       )
@@ -1746,10 +1746,10 @@ export class Downloader {
 
   /**
    * Instagram: resolve any share/short link to its canonical post URL, then
-   * try several login-free extractors in order of reliability:
-   *   1. Instagram's own web GraphQL endpoint (richest metadata, carousels)
-   *   2. The public embed page (resilient for public single posts)
-   *   3. Cobalt instances (last-resort community fallback)
+   * use the upstream project's original extractor order:
+   *   1. Instagram's public embed page
+   *   2. Instagram's media API, only for an explicitly credentialed request
+   *   3. The upstream project's original Cobalt instance list
    *
    * Instagram posts are mapped onto the same VideoData shape as everything
    * else: a single primary video goes in `downloadUrl`, while photos (and the
@@ -1793,14 +1793,8 @@ export class Downloader {
     //      anything on. No-ops (returns null, sends nothing) for an
     //      uncredentialed resolve, and tried after the embed so the burner
     //      account is only used when actually needed.
-    //   3. Cobalt — the datacenter-reachable fallback, and the one that answers
-    //      when the embed shell comes back. Instagram's own signed
-    //      video CDN URLs are frequently refused with an
-    //      HTTP 500/403 when re-fetched from a datacenter IP (e.g. Vercel), even
-    //      though extraction succeeded — so the /api/video proxy can't stream
-    //      them and the player is dead. Cobalt re-extracts the clip and hands
-    //      back a URL that DOES stream from any IP, so it's the rescue path when
-    //      the primary stream is unreachable here.
+    //   3. Cobalt — keep the upstream project's original fallback and original
+    //      instance list. Do not add fork-specific public instances here.
     const methods: Array<() => Promise<VideoData | null>> = [
       () =>
         shortcode
@@ -1871,7 +1865,7 @@ export class Downloader {
           : 'Instagram extraction failed and IG_SESSIONID is not set — login-gated posts require it.',
       )
       throw new Error(
-        'Could not download this Instagram post. Public posts, reels and carousels work — this one is private, age- or region-restricted, or has been deleted, and Instagram serves those only to a logged-in account.',
+        'Available public Instagram resolvers could not extract this post. Instagram may be blocking logged-out datacenter requests, or the public fallback services may be temporarily rate-limited. Confirm the post opens publicly and try again.',
       )
     }
     throw new Error(

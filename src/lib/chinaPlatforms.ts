@@ -77,6 +77,7 @@ function result(input: {
   video?: string
   thumbnail?: string
   images?: string[]
+  staticGallery?: boolean
 }): VideoData | null {
   const imageUrls = unique(input.images ?? [])
   const images: ImageData[] = imageUrls.map((url, index) => ({
@@ -94,9 +95,33 @@ function result(input: {
     duration: 0,
     author: input.author || '未知作者',
     description: '',
-    downloadUrl: input.video || images[0]?.url || '',
+    // A static gallery has no video stream. Keeping its first JPG in
+    // downloadUrl makes the UI and /api/video proxy treat that image as an MP4,
+    // which is exactly how Xiaohongshu Live Photos ended up being downloaded as
+    // misleading "videos". Images remain available through images[].
+    downloadUrl: input.staticGallery ? '' : input.video || images[0]?.url || '',
     images: images.length ? images : undefined,
-    isPhotoCarousel: images.length > 0,
+    isPhotoCarousel: input.staticGallery ? false : images.length > 0,
+  }
+}
+
+/**
+ * Xiaohongshu Live Photo responses commonly contain both an MP4 motion asset
+ * and the original still images. This Worker does not reconstruct Apple's
+ * paired Live Photo format, so present the stills honestly as an image gallery
+ * instead of labelling the MP4 as the post download.
+ */
+export function preferXiaohongshuImages(data: VideoData): VideoData {
+  if (!data.images?.length) return data
+  return {
+    ...data,
+    thumbnail: data.images[0]?.thumbnail || data.thumbnail,
+    downloadUrl: '',
+    isPhotoCarousel: false,
+    musicUrl: undefined,
+    musicTitle: undefined,
+    musicAuthor: undefined,
+    tunnel: undefined,
   }
 }
 
@@ -299,17 +324,24 @@ export function parseIfphpPayload(
   const successfulCodes: unknown[] = [0, 200, '0', '200']
   if (code !== undefined && !successfulCodes.includes(code)) return null
   const media = mediaFromObject(payload)
-  return result({
+  const video = media.videos.find((url) => url !== sourceUrl)
+  const parsed = result({
     id:
       stringAtPath(payload, ['aweme_id', 'photoId', 'bvid', 'note_id', 'id']) ||
       `${platform}_${Date.now()}`,
     sourceUrl,
     title: stringAtPath(payload, ['title', 'desc', 'text', 'caption']) || `${platform} 媒体`,
     author: stringAtPath(payload, ['nickname', 'author_name', 'username', 'author']),
-    video: media.videos.find((url) => url !== sourceUrl),
+    // When Xiaohongshu provides both halves of a Live Photo, keep the still
+    // images. A normal video note has no image list and therefore keeps video.
+    video: platform === 'xiaohongshu' && media.images.length ? undefined : video,
     thumbnail: stringAtPath(payload, ['cover', 'thumbnail', 'pic']),
     images: media.images,
+    staticGallery: platform === 'xiaohongshu' && media.images.length > 0,
   })
+  return platform === 'xiaohongshu' && parsed
+    ? preferXiaohongshuImages(parsed)
+    : parsed
 }
 
 async function resolveIfphp(
@@ -399,10 +431,11 @@ async function resolveXiaohongshu(sourceUrl: string): Promise<VideoData | null> 
           htmlTitle(html).replace(/\s*[-_|].*小红书.*$/i, '') ||
           '小红书笔记',
         author: stringAtPath(state, ['nickname', 'userName', 'username']),
-        video: media.videos[0],
+        video: media.images.length ? undefined : media.videos[0],
         images: media.images,
+        staticGallery: media.images.length > 0,
       })
-      if (parsed) return parsed
+      if (parsed) return preferXiaohongshuImages(parsed)
     }
   } catch {
     // Continue with the configured API fallback.

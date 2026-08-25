@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { parseIfphpPayload, parseKuaishouHtml } from './chinaPlatforms'
+import {
+  parseIfphpPayload,
+  parseKuaishouHtml,
+  preferXiaohongshuImages,
+} from './chinaPlatforms'
 import { detectPlatform, extractFirstHttpUrl } from './validator'
 
 describe('Chinese share links', () => {
@@ -80,5 +84,74 @@ describe('IF-PHP response normalisation', () => {
         'douyin',
       ),
     ).toBeNull()
+  })
+
+  it('returns Xiaohongshu Live Photos as still images, not a video', () => {
+    const parsed = parseIfphpPayload(
+      {
+        code: 200,
+        data: {
+          note_id: 'note-live-photo',
+          title: '动图笔记',
+          live_photo: { video_url: 'https://cdn.example/live-photo.mp4' },
+          image_list: [
+            { url: 'https://sns-webpic.example/one.jpg' },
+            { url: 'https://sns-webpic.example/two.jpg' },
+          ],
+        },
+      },
+      'https://xhslink.cn/o/example',
+      'xiaohongshu',
+    )
+    expect(parsed?.downloadUrl).toBe('')
+    expect(parsed?.isPhotoCarousel).toBe(false)
+    expect(parsed?.images?.map((image) => image.url)).toEqual([
+      'https://sns-webpic.example/one.jpg',
+      'https://sns-webpic.example/two.jpg',
+    ])
+  })
+
+  it('keeps a normal Xiaohongshu video when no image list exists', () => {
+    const parsed = parseIfphpPayload(
+      {
+        code: 200,
+        data: {
+          note_id: 'note-video',
+          video: { play_url: 'https://cdn.example/note.mp4' },
+          cover: 'https://sns-webpic.example/cover.jpg',
+        },
+      },
+      'https://xhslink.cn/o/video',
+      'xiaohongshu',
+    )
+    expect(parsed?.downloadUrl).toBe('https://cdn.example/note.mp4')
+    expect(parsed?.images).toBeUndefined()
+  })
+})
+
+describe('Xiaohongshu Cobalt fallback normalisation', () => {
+  it('drops a motion asset when still images are also available', () => {
+    const parsed = preferXiaohongshuImages({
+      id: 'note',
+      title: '动图',
+      url: 'https://xhslink.cn/o/example',
+      thumbnail: 'https://cdn.example/thumb.jpg',
+      duration: 0,
+      author: '作者',
+      description: '',
+      downloadUrl: 'https://cdn.example/live-photo.mp4',
+      tunnel: true,
+      isPhotoCarousel: true,
+      images: [
+        {
+          id: 'still',
+          url: 'https://cdn.example/still.jpg',
+          thumbnail: 'https://cdn.example/still.jpg',
+        },
+      ],
+    })
+    expect(parsed.downloadUrl).toBe('')
+    expect(parsed.tunnel).toBeUndefined()
+    expect(parsed.isPhotoCarousel).toBe(false)
   })
 })

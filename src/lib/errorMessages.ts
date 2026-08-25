@@ -18,6 +18,7 @@ const UNSUPPORTED = /unsupported|invalid url|couldn'?t? (parse|recogni)|not a va
 const RATE = /rate[- ]?limit|too many|429|blocking requests|blocked/i
 const NETWORK = /network|timeout|timed out|econn|fetch failed|socket/i
 const STORY = /story|stories|highlight/i
+const PUBLIC_INSTAGRAM_RESOLVER = /public Instagram resolvers/i
 
 /**
  * Map a raw error to a friendly headline + hint. Falls back to the raw text
@@ -31,6 +32,12 @@ export function friendlyError(raw: string | undefined, url?: string): FriendlyEr
     return {
       title: 'Stories need a logged-in session',
       hint: 'Instagram only serves stories & highlights to signed-in accounts, so they can’t be fetched anonymously here.',
+    }
+  }
+  if (PUBLIC_INSTAGRAM_RESOLVER.test(text)) {
+    return {
+      title: 'Instagram public resolver unavailable',
+      hint: 'The post may still be public. Instagram or the fallback service refused this request; wait a moment and try again.',
     }
   }
   if (AGE.test(text)) {
