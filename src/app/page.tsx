@@ -42,7 +42,7 @@ export default function Home() {
             </h1>
             <p className='mx-auto mt-4 max-w-2xl text-sm leading-7 text-white/65 sm:text-base'>
               粘贴公开作品链接，解析视频、音频或图片。网页和快捷指令均需鉴权，
-              Instagram Cookie 只保存在你的 Cloudflare Worker 服务端。
+              Instagram 和 Facebook Cookie 只保存在你的 Cloudflare Worker 服务端。
             </p>
             <div className='mt-5 flex flex-wrap justify-center gap-2 text-xs text-cyan-100/85'>
               <span className='rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1.5'>
@@ -64,7 +64,7 @@ export default function Home() {
 
         <p className='mx-auto mt-6 max-w-3xl text-center text-xs leading-6 text-white/45'>
           仅处理你有权保存的公开内容。请勿把账号密码、快捷指令 API Key 或
-          Instagram Cookie 写入仓库、截图、网址参数或客户端代码。
+          Instagram 或 Facebook Cookie 写入仓库、截图、网址参数或客户端代码。
         </p>
       </main>
     </div>

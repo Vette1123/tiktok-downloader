@@ -152,7 +152,7 @@ export function PrivateGate({ children }: { children: React.ReactNode }) {
         </form>
         <p className='mt-5 text-center text-xs leading-relaxed text-white/45'>
           登录信息只通过 HTTPS 发送；浏览器仅保存 HttpOnly 签名会话，不保存
-          Instagram Cookie。
+          Instagram 或 Facebook Cookie。
         </p>
       </Surface>
     )

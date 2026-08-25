@@ -24,6 +24,10 @@ function cookieOf(downloader: Downloader): string {
   return (downloader as unknown as { instagramCookie: string }).instagramCookie
 }
 
+function facebookCookieOf(downloader: Downloader): string {
+  return (downloader as unknown as { facebookCookie: string }).facebookCookie
+}
+
 const COOKIE = 'test-session-cookie-value'
 
 const IG_VARS = [
@@ -37,8 +41,53 @@ const IG_VARS = [
   'IG_WD',
 ]
 
+const FB_VARS = [
+  'FB_COOKIE_HEADER',
+  'FB_DATR',
+  'FB_SB',
+  'FB_C_USER',
+  'FB_XS',
+  'FB_FR',
+  'FB_WD',
+]
+
 afterEach(() => {
   for (const key of IG_VARS) delete process.env[key]
+  for (const key of FB_VARS) delete process.env[key]
+})
+
+describe('the Facebook credential gate', () => {
+  it('withholds Facebook Cookie from an anonymous instance', () => {
+    process.env.FB_C_USER = '12345'
+    process.env.FB_XS = 'session-value'
+    expect(facebookCookieOf(new Downloader())).toBe('')
+  })
+
+  it('assembles the named Facebook cookies only when credentialed', () => {
+    process.env.FB_DATR = 'datr-v'
+    process.env.FB_SB = 'sb-v'
+    process.env.FB_C_USER = '12345'
+    process.env.FB_XS = 'xs-v'
+    process.env.FB_FR = 'fr-v'
+    process.env.FB_WD = '1920x1080'
+
+    expect(facebookCookieOf(new Downloader({ credentialed: true }))).toBe(
+      'datr=datr-v; sb=sb-v; c_user=12345; xs=xs-v; fr=fr-v; wd=1920x1080',
+    )
+  })
+
+  it('prefers a full header and rejects newline injection', () => {
+    process.env.FB_COOKIE_HEADER = 'c_user=12345; xs=xs-v; extra=1'
+    process.env.FB_C_USER = 'different'
+    expect(facebookCookieOf(new Downloader({ credentialed: true }))).toBe(
+      'c_user=12345; xs=xs-v; extra=1',
+    )
+
+    process.env.FB_COOKIE_HEADER = 'c_user=12345\nInjected: yes'
+    expect(facebookCookieOf(new Downloader({ credentialed: true }))).toBe(
+      'c_user=different',
+    )
+  })
 })
 
 describe('the Instagram credential gate', () => {

@@ -21,6 +21,10 @@ type PrivateDownloader = {
   tryThreadsEmbed(url: string): Promise<VideoDataLike | null>
   tryVimeo(url: string): Promise<VideoDataLike | null>
   resolveRedirect(url: string): Promise<string>
+  tryFacebookPlugin(
+    resolvedUrl: string,
+    originalUrl: string,
+  ): Promise<VideoDataLike | null>
   parseFacebookHtml(html: string, url: string): VideoDataLike | null
   downloadFacebook(url: string): Promise<VideoDataLike>
   tryFacebookPhoto(
@@ -59,6 +63,13 @@ function stubFetch(body: unknown, init?: ResponseInit) {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  delete process.env.FB_COOKIE_HEADER
+  delete process.env.FB_DATR
+  delete process.env.FB_SB
+  delete process.env.FB_C_USER
+  delete process.env.FB_XS
+  delete process.env.FB_FR
+  delete process.env.FB_WD
 })
 
 describe('the Twitch clip slug', () => {
@@ -315,6 +326,35 @@ describe('the Facebook short-link resolver', () => {
     expect((init.headers as Record<string, string>)['User-Agent']).toContain(
       'facebookexternalhit',
     )
+  })
+
+  it('sends Facebook Cookie only on a credentialed Facebook request', async () => {
+    process.env.FB_C_USER = '12345'
+    process.env.FB_XS = 'xs-v'
+    const plugin =
+      '<html><head><title>Facebook</title></head><body>' +
+      '<script>{"hd_src":"https://video.example.fna.fbcdn.net/clip.mp4"}</script>' +
+      '</body></html>'
+    const spy = stubFetch(plugin)
+    await priv(new Downloader({ credentialed: true })).tryFacebookPlugin(
+      'https://www.facebook.com/reel/1/',
+      'https://www.facebook.com/reel/1/',
+    )
+    const headers = spy.mock.calls[0][1]?.headers as Record<string, string>
+    expect(headers.Cookie).toBe('c_user=12345; xs=xs-v')
+    expect(String(spy.mock.calls[0][0])).toContain('facebook.com/plugins/video.php')
+  })
+
+  it('does not send a configured Facebook Cookie from an anonymous request', async () => {
+    process.env.FB_C_USER = '12345'
+    process.env.FB_XS = 'xs-v'
+    const spy = stubFetch('<html><script>{"hd_src":"https://video.example/clip.mp4"}</script></html>')
+    await priv(new Downloader()).tryFacebookPlugin(
+      'https://www.facebook.com/reel/1/',
+      'https://www.facebook.com/reel/1/',
+    )
+    const headers = spy.mock.calls[0][1]?.headers as Record<string, string>
+    expect(headers.Cookie).toBeUndefined()
   })
 
   /**

@@ -13,7 +13,8 @@
 | 小红书 | 分享页直解析 → IF-PHP 聚合 API → Cobalt 回退 | 否 | 风控页面可能需要后两种回退方式；Live Photo 优先返回静态原图 |
 | 哔哩哔哩 | B站公开接口 | 否 | 返回单文件 MP4，避免 Worker 无法合并 DASH 音视频的问题 |
 | Instagram | 服务端登录媒体接口 → 上游原有 Embed/媒体接口 → 原有 Cobalt 回退 | 部分内容需要 | Cookie 只发送给 Instagram，不会发送给前端或 Cobalt |
-| TikTok、X、Facebook、YouTube 等 | 继承原项目解析链 | 否 | 仅支持公开可访问内容 |
+| Facebook | 官方插件页 → Facebook 原页面 → 原有 Cobalt 回退 | 年龄限制内容可能需要 | Facebook Cookie 只发送给 Facebook 官方页面，不会发送给 CDN、前端或 Cobalt |
+| TikTok、X、YouTube 等 | 继承原项目解析链 | 否 | 仅支持公开可访问内容 |
 
 > 私密作品、好友可见作品、付费内容和 DRM 内容不在支持范围内。Instagram 年龄限制内容只在你配置的专用账号本身有权访问时尝试解析。
 
@@ -146,6 +147,36 @@ pnpm exec wrangler secret put IFPHP_API_KEY
 2. 只对 Instagram 平台启用，绝不会附加到抖音、快手、IF-PHP 或 Cobalt 请求；
 3. Cookie 不返回前端、不写日志、不进入缓存；
 4. 使用 Cookie 的解析结果同时跳过内存缓存和 Cloudflare 边缘缓存。
+
+## 安全配置 Facebook Cookie（可选）
+
+Facebook 出现年龄限制、需要登录或登录后可见的公开内容时，可以配置一个单独的、符合年龄要求的 Facebook 账号 Cookie。建议使用专用账号，不要使用日常主账号，也不要把 Cookie 值发送给任何第三方解析站。
+
+在 Cloudflare 的“Variables and Secrets”中将下列值添加为 **Secret**。最少建议配置 `FB_C_USER` 和 `FB_XS`；其余值来自同一个浏览器配置文件，能提高会话稳定性：
+
+| 名称 | 对应 Facebook Cookie 名称 | 必需性 |
+| --- | --- | --- |
+| `FB_C_USER` | `c_user` | 建议 |
+| `FB_XS` | `xs` | 建议 |
+| `FB_DATR` | `datr` | 可选 |
+| `FB_SB` | `sb` | 可选 |
+| `FB_FR` | `fr` | 可选 |
+| `FB_WD` | `wd` | 可选 |
+
+如果浏览器的 Facebook 会话包含额外的 Meta Cookie，也可以只添加一个 Secret：
+
+| 名称 | 值 |
+| --- | --- |
+| `FB_COOKIE_HEADER` | 浏览器 Cookie 请求头的完整值，不要包含 `Cookie:` 前缀 |
+
+同时配置 `FB_COOKIE_HEADER` 和分项 Cookie 时，优先使用 `FB_COOKIE_HEADER`。不要在这个值中包含换行。Cookie 使用有四层保护：
+
+1. 只有通过网页账号密码登录或快捷指令 API Key 鉴权的请求，才允许使用 Facebook Cookie；
+2. 只附加到 `facebook.com`、`www.facebook.com`、`m.facebook.com` 的解析请求，不会发送给 `fbcdn.net`、媒体 CDN、IF-PHP 或 Cobalt；
+3. Cookie 不返回前端、不写日志、不进入内存缓存或 Cloudflare 边缘缓存；
+4. 解析出的媒体直链不包含 Facebook Cookie，手机或 NAS 下载媒体时也不会收到 Cookie。
+
+Facebook Cookie 不能突破私密账号、好友可见、付费内容、DRM 或账号本身无权访问的内容。Facebook 可能要求重新验证设备或账号；出现异常时应立即撤销该专用账号会话并重新导出 Cookie。
 
 ## 本地开发
 
