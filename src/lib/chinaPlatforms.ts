@@ -257,7 +257,6 @@ function isXiaohongshuImagePost(value: unknown): boolean {
 }
 
 function xiaohongshuNote(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object') return null
   if (Array.isArray(value)) {
     for (const child of value) {
       const note = xiaohongshuNote(child)
@@ -265,18 +264,9 @@ function xiaohongshuNote(value: unknown): Record<string, unknown> | null {
     }
     return null
   }
+  if (!value || typeof value !== 'object') return null
   const record = value as Record<string, unknown>
-  if (
-    record.video && typeof record.video === 'object'
-  ) {
-    return record
-  }
-  if (
-    Array.isArray(record.imageList) ||
-    Array.isArray(record.image_list)
-  ) {
-    return record
-  }
+  if (record.video || record.imageList || record.image_list) return record
   for (const child of Object.values(record)) {
     const note = xiaohongshuNote(child)
     if (note) return note
@@ -307,10 +297,9 @@ function xiaohongshuVideo(note: Record<string, unknown>): string {
   if (!video || typeof video !== 'object') return ''
   const record = video as Record<string, unknown>
   const media = record.media
-  const streams =
-    media && typeof media === 'object'
-      ? (media as Record<string, unknown>).stream
-      : null
+  const streams = media && typeof media === 'object'
+    ? (media as Record<string, unknown>).stream
+    : null
   if (streams && typeof streams === 'object') {
     for (const codec of ['h264', 'h265', 'av1']) {
       const items = (streams as Record<string, unknown>)[codec]
@@ -322,13 +311,11 @@ function xiaohongshuVideo(note: Record<string, unknown>): string {
     }
   }
   const consumer = record.consumer
-  const key =
-    consumer && typeof consumer === 'object'
-      ? text((consumer as Record<string, unknown>).originVideoKey)
-      : ''
-  return (
-    key ? `https://sns-video-bd.xhscdn.com/${key}` : ''
-  ) || text(record.play_url) || text(record.playUrl) || text(record.url)
+  const key = consumer && typeof consumer === 'object'
+    ? text((consumer as Record<string, unknown>).originVideoKey)
+    : ''
+  return (key ? `https://sns-video-bd.xhscdn.com/${key}` : '') ||
+    text(record.play_url) || text(record.playUrl) || text(record.url)
 }
 
 function mediaFromObject(
