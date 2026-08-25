@@ -8,8 +8,8 @@ describe('friendlyError', () => {
         'Available public Instagram resolvers could not extract this post. The fallback may be temporarily rate-limited.',
       ),
     ).toEqual({
-      title: 'Instagram public resolver unavailable',
-      hint: 'The post may still be public. Instagram or the fallback service refused this request; wait a moment and try again.',
+      title: 'Instagram 公共解析暂不可用',
+      hint: '作品可能仍是公开的，但 Instagram 或备用解析服务拒绝了请求；可稍后重试，或配置安全的 Instagram Cookie。',
     })
   })
 })

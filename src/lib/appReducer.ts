@@ -159,7 +159,7 @@ export function autoOpensPreview({
  * already agreed on, and it is the only part of those strings that is not
  * prose someone will reword.
  */
-const SUCCESS_MARKERS = ['success', '🎉', '🎵', '🎬', '🖼️'] as const
+const SUCCESS_MARKERS = ['success', '成功', '已开始', '🎉', '🎵', '🎬', '🖼️', '🗜️'] as const
 
 export function isSuccessMessage(message: string): boolean {
   return SUCCESS_MARKERS.some((marker) => message.includes(marker))
@@ -256,7 +256,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       const hasImages = !!meta.images && meta.images.length > 0
       return {
         ...state,
-        message: 'Content processed successfully!',
+        message: '内容解析成功！',
         downloadUrl: action.payload.downloadUrl || '',
         audioUrl: action.payload.audioUrl || '',
         originalUrl: action.payload.originalUrl,

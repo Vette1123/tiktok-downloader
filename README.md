@@ -12,10 +12,10 @@
 | 快手 | 移动分享页直解析 → IF-PHP API → Cobalt 回退 | 否 | 支持完整分享文案和短链接 |
 | 小红书 | 分享页直解析 → IF-PHP 聚合 API → Cobalt 回退 | 否 | 风控页面可能需要后两种回退方式；Live Photo 优先返回静态原图 |
 | 哔哩哔哩 | B站公开接口 | 否 | 返回单文件 MP4，避免 Worker 无法合并 DASH 音视频的问题 |
-| Instagram | 上游原有 Embed → 媒体接口 → 原有 Cobalt 回退 | 否 | 完全沿用上游路由，不增加额外公共 Cobalt |
+| Instagram | 服务端登录媒体接口 → 上游原有 Embed/媒体接口 → 原有 Cobalt 回退 | 部分内容需要 | Cookie 只发送给 Instagram，不会发送给前端或 Cobalt |
 | TikTok、X、Facebook、YouTube 等 | 继承原项目解析链 | 否 | 仅支持公开可访问内容 |
 
-> 私密作品、好友可见作品、付费内容、DRM 内容以及登录后才能访问的内容不在支持范围内。
+> 私密作品、好友可见作品、付费内容和 DRM 内容不在支持范围内。Instagram 年龄限制内容只在你配置的专用账号本身有权访问时尝试解析。
 
 ## 中国平台解析流程
 
@@ -106,6 +106,47 @@ pnpm exec wrangler secret put IFPHP_API_KEY
 
 不设置 `CANONICAL_ORIGIN` 时，workers.dev 地址会直接提供服务，不会像上游项目那样跳转到原作者网站。
 
+## 必须配置私人访问
+
+为防止陌生人直接消耗 Worker 请求额度，网页解析和所有媒体代理接口都默认拒绝匿名请求。请在 Cloudflare 控制台进入：
+
+`Workers & Pages → social-media-downloader-cn → Settings → Variables and Secrets`
+
+添加以下四个加密 Secret：
+
+| 名称 | 建议内容 |
+| --- | --- |
+| `WEB_USERNAME` | 你登录网页使用的账号名 |
+| `WEB_PASSWORD` | 独立的高强度密码，不要与其他网站共用 |
+| `SESSION_SECRET` | 至少 32 字节的随机字符串，用于签名 HttpOnly 会话 |
+| `SHORTCUT_API_KEY` | 至少 32 字节的另一条随机字符串，只给快捷指令使用 |
+
+`SESSION_SECRET` 与 `SHORTCUT_API_KEY` 必须不同。不要把这些值写入 GitHub Actions Variable、仓库文件、网址参数或截图。网页密码登录连续失败 5 次会暂时锁定 10 分钟；解析接口每个来源地址每分钟最多 30 次。
+
+## 安全配置 Instagram Cookie（可选）
+
+仅当公开解析无法处理 Instagram 年龄限制内容时才需要配置。建议注册一个单独的成年 Instagram 账号，不要使用日常主账号。
+
+在 Cloudflare 的“Variables and Secrets”中将下列值全部添加为 **Secret**：
+
+| 名称 | 对应 Instagram Cookie 名称 | 必需性 |
+| --- | --- | --- |
+| `IG_SESSIONID` | `sessionid` | 必需 |
+| `IG_CSRFTOKEN` | `csrftoken` | 建议 |
+| `IG_DS_USER_ID` | `ds_user_id` | 建议 |
+| `IG_MID` | `mid` | 建议 |
+| `IG_DID` | `ig_did` | 建议 |
+| `IG_DATR` | `datr` | 可选 |
+| `IG_RUR` | `rur` | 可选 |
+| `IG_WD` | `wd` | 可选 |
+
+这些值必须来自同一个浏览器配置文件。实现中有四层保护：
+
+1. Cookie 只在网页已登录或快捷指令 API Key 验证成功后启用；
+2. 只对 Instagram 平台启用，绝不会附加到抖音、快手、IF-PHP 或 Cobalt 请求；
+3. Cookie 不返回前端、不写日志、不进入缓存；
+4. 使用 Cookie 的解析结果同时跳过内存缓存和 Cloudflare 边缘缓存。
+
 ## 本地开发
 
 要求：
@@ -133,13 +174,14 @@ pnpm exec tsc --noEmit
 pnpm preview
 ```
 
-## API 使用示例
+## 快捷指令专用 API
 
-请求：
+快捷指令只能调用下面这个接口。API Key 必须放在请求头中，不能拼在网址后面。
 
 ```http
-POST /api/download
+POST /api/shortcut/resolve
 Content-Type: application/json
+X-API-Key: 你的_SHORTCUT_API_KEY
 
 {
   "url": "2.84 复制打开抖音，看看作品 https://v.douyin.com/xxxx/ 复制口令",
@@ -148,17 +190,21 @@ Content-Type: application/json
 }
 ```
 
-接口会自动从完整分享文案中提取链接。成功响应中：
+接口会自动从完整分享文案中提取链接。成功响应中常用字段：
 
-- `downloadUrl`：同源媒体代理地址；
-- `audioUrl`：可用时返回音频地址；
-- `metadata.images`：图文作品的图片列表；
-- `metadata.directVideoUrl`：Cobalt 隧道可直接下载时返回。
+- `type`：`video`、`audio`、`image` 或 `images`；
+- `video_url`：视频地址；
+- `audio_url`：音频地址；
+- `image_urls`：图片地址数组；
+- `title`、`author`、`thumbnail`：作品信息。
+
+如果返回的是本站 `/api/` 媒体地址，快捷指令在下一步“获取 URL 内容”时也必须继续携带相同的 `X-API-Key` 请求头。否则媒体代理会返回 401。
 
 ## 安全说明
 
-- API Key 仅保存在 Cloudflare Secret 中，不提交到仓库。
-- 页面不会要求用户提交平台 Cookie。
+- 所有密码、API Key 和 Cookie 仅保存在 Cloudflare Secret 中，不提交到仓库。
+- 浏览器只保存带 `HttpOnly; Secure; SameSite=Strict` 的签名会话，不保存网页密码。
+- 快捷指令 API Key 不接受 Query 参数，只接受 `X-API-Key` 或 `Authorization: Bearer` 请求头。
 - 只解析公开链接，不绕过登录、付费或 DRM 限制。
 - 公共 Cobalt 实例属于第三方服务，可能记录请求链接，也可能限流或停止服务；隐私敏感场景建议配置自建实例。
 - 媒体链接通常有时效，解析后应尽快下载。

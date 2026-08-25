@@ -1836,7 +1836,14 @@ export class Downloader {
 
         if ((result.images?.length ?? 0) > 0) return result
       } catch (e) {
-        console.warn('Instagram method failed, trying next...', e)
+        // Never log an Axios error object here. It contains request.config,
+        // including the credentialed request's Cookie header. A short error
+        // name/message is enough to diagnose the fallback without exposing the
+        // operator's Instagram session in Cloudflare logs.
+        console.warn(
+          'Instagram method failed, trying next...',
+          e instanceof Error ? `${e.name}: ${e.message}` : 'unknown error',
+        )
       }
     }
 

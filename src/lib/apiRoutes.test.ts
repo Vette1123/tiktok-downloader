@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { handleDownload, resolveCacheKey, resolveFailure } from './apiRoutes'
+import {
+  handleDownload,
+  handleShortcutResolve,
+  resolveCacheKey,
+  resolveFailure,
+} from './apiRoutes'
 
 describe('resolveCacheKey', () => {
   it('produces equal keys for identical inputs', () => {
@@ -55,6 +60,20 @@ describe('handleDownload failure statuses', () => {
     // network call. Anything that does reach an extractor is covered by the
     // resolveFailure cases below instead.
     expect(await statusFor('not a url at all')).toBe(400)
+  })
+})
+
+describe('shortcut API protection', () => {
+  it('rejects direct calls that were not authenticated by the Worker', async () => {
+    const response = await handleShortcutResolve(
+      new Request('https://example.com/api/shortcut/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: 'https://www.instagram.com/p/example/' }),
+      }),
+    )
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toMatchObject({ success: false })
   })
 })
 

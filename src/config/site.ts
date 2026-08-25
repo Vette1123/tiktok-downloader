@@ -8,8 +8,8 @@ const siteUrl = (
 ).replace(/\/+$/, '')
 
 export const siteConfig = {
-  name: 'Social Media Downloader',
-  shortName: 'Social Downloader',
+  name: '社交媒体解析下载器',
+  shortName: '媒体下载器',
   /**
    * How the site describes itself everywhere — title, meta, OG, JSON-LD.
    *
@@ -19,15 +19,13 @@ export const siteConfig = {
    * reads these strings during account review. The behaviour is unchanged:
    * we save the source file a platform serves for a public post. Say that.
    */
-  tagline:
-    'Download TikTok, X, Instagram, Facebook & YouTube videos in original quality',
+  tagline: '安全解析并保存公开社交媒体内容',
   description:
-    'Free downloader for public TikTok, X, Instagram, Facebook & YouTube posts — save HD videos, Reels & Shorts, extract MP3 audio, or grab photo carousels.',
+    '需要私人登录的社交媒体解析下载器，支持解析公开的视频、音频和图片内容，并为快捷指令提供受 API Key 保护的接口。',
   url: siteUrl,
   ogImage: `${siteUrl}/opengraph-image`,
-  ogImageAlt:
-    'Social Media Downloader — paste a TikTok, X, Instagram, Facebook, or YouTube link to save the HD video, MP3 audio, or images from a public post.',
-  locale: 'en_US',
+  ogImageAlt: '社交媒体解析下载器中文界面',
+  locale: 'zh_CN',
   foundingYear: 2024,
   /**
    * The one public contact address, for support, billing receipts and takedown

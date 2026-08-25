@@ -48,7 +48,7 @@ export function ConfirmDialog({
   title,
   body,
   confirmLabel,
-  dismissLabel = 'Cancel',
+  dismissLabel = '取消',
   tone = 'danger',
   onConfirm,
   onCancel,

@@ -153,7 +153,7 @@ export function ImageLightbox({
       onClick={handleBackdropClick}
       role='dialog'
       aria-modal='true'
-      aria-label='Image preview'
+      aria-label='图片预览'
     >
       {/* Top bar: counter + close */}
       <div
@@ -169,7 +169,7 @@ export function ImageLightbox({
             onClose()
           }}
           className='flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/15 transition-colors hover:bg-white/20'
-          aria-label='Close preview'
+          aria-label='关闭预览'
         >
           <CloseIcon className='h-5 w-5' />
         </button>
@@ -189,7 +189,7 @@ export function ImageLightbox({
               paginate(-1)
             }}
             className='absolute left-2 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-2xl leading-none text-white transition-colors hover:bg-white/20 sm:left-4 md:h-12 md:w-12'
-            aria-label='Previous image'
+            aria-label='上一张图片'
           >
             ‹
           </button>
@@ -230,7 +230,7 @@ export function ImageLightbox({
               paginate(1)
             }}
             className='absolute right-2 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-2xl leading-none text-white transition-colors hover:bg-white/20 sm:right-4 md:h-12 md:w-12'
-            aria-label='Next image'
+            aria-label='下一张图片'
           >
             ›
           </button>
@@ -244,7 +244,7 @@ export function ImageLightbox({
           className='btn-grad flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition-[box-shadow,transform] hover:-translate-y-0.5'
         >
           <DownloadIcon className='h-4 w-4' />
-          Download image
+          下载图片
         </button>
       </div>
     </div>,
