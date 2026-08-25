@@ -34,7 +34,6 @@ import { tryYouTubeInnertube } from './youtubeInnertube'
 import { ytdlpInfo } from './ytdlp'
 import {
   preferXiaohongshuImages,
-  resolveIfphpMedia,
   resolveChinesePlatform,
   type ChinesePlatform,
 } from './chinaPlatforms'
@@ -784,11 +783,6 @@ export class Downloader {
     'https://co.otomir23.me/',
     'https://rue-cobalt.xenon.zone/',
     'https://cobaltapi.cjs.nz/',
-    // Community endpoint verified by the fork owner. It is deliberately last:
-    // it is useful for Instagram/Xiaohongshu picker results, but has shown
-    // intermittent failures and should remain a fallback rather than the
-    // primary dependency.
-    'https://api.co.rooot.gay/',
   ]
 
   private get cobaltInstances(): string[] {
@@ -1752,14 +1746,10 @@ export class Downloader {
 
   /**
    * Instagram: resolve any share/short link to its canonical post URL, then
-   * try several extractors in order of reliability:
+   * use the upstream project's original extractor order:
    *   1. Instagram's public embed page
    *   2. Instagram's media API, only for an explicitly credentialed request
-   *   3. The configured IF-PHP aggregate endpoint
-   *
-   * This fork deliberately does not send Instagram links to public Cobalt
-   * instances. Self-hosting the Worker should not silently turn a supposedly
-   * private route into a dependency on an unrelated community service.
+   *   3. The upstream project's original Cobalt instance list
    *
    * Instagram posts are mapped onto the same VideoData shape as everything
    * else: a single primary video goes in `downloadUrl`, while photos (and the
@@ -1803,12 +1793,8 @@ export class Downloader {
     //      anything on. No-ops (returns null, sends nothing) for an
     //      uncredentialed resolve, and tried after the embed so the burner
     //      account is only used when actually needed.
-    //   3. IF-PHP aggregate API — operator-keyed public resolver. It is tried
-    //      before anonymous community services when IFPHP_API_KEY is configured.
-    // Public Cobalt is intentionally excluded from Instagram. The Worker first
-    // uses its own Instagram extractor, then the operator-configured IF-PHP
-    // endpoint. If both fail, report that result instead of silently sending the
-    // link to an unstable community resolver.
+    //   3. Cobalt — keep the upstream project's original fallback and original
+    //      instance list. Do not add fork-specific public instances here.
     const methods: Array<() => Promise<VideoData | null>> = [
       () =>
         shortcode
@@ -1818,7 +1804,7 @@ export class Downloader {
         shortcode
           ? this.tryInstagramMediaInfo(shortcode, url)
           : Promise.resolve(null),
-      () => resolveIfphpMedia(resolvedUrl, 'instagram'),
+      () => this.tryCobaltInstances(resolvedUrl),
     ]
 
     // Hold the first video result whose stream we couldn't confirm reachable, so
