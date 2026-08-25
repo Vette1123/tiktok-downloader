@@ -31,9 +31,44 @@
  * `ig` grant is deliberately not on this list and is not something anyone can
  * obtain by supporting the project.
  */
-export const PRO_BENEFITS = [
-  'Paste a list and let the queue run',
-  'Priority resolving on every link',
-  'Images and audio bundled into one ZIP',
-  'No sponsor card, site-wide',
-] as const
+export interface ProBenefit {
+  title: string
+  body: string
+}
+
+/**
+ * Everything an entitled account gets, grouped the way someone shopping for a
+ * reason to support thinks about it. Two rules survive from the store days:
+ * every line describes less standing over it (never more reach), and nothing
+ * here may be readable as "paywalled downloads".
+ */
+export const PRO_BENEFITS: ProBenefit[] = [
+  {
+    title: 'The batch queue',
+    body: 'Paste up to 20 links and let them resolve in turn — videos save themselves as each finishes.',
+  },
+  {
+    title: 'One-paste collection import',
+    body: 'A YouTube playlist, Reddit subreddit or profile, Pinterest board, or Vimeo channel becomes queue rows instantly — de-duplicated, capped per run.',
+  },
+  {
+    title: 'Adjustable batch speed',
+    body: 'Run 1–3 parallel lanes. Fast when you are in a hurry; back down when a source starts refusing traffic.',
+  },
+  {
+    title: 'Subtitles, remembered',
+    body: 'Save any YouTube caption track as SRT or VTT — auto-generated included — and your preferred language leads the list next time, synced to your account.',
+  },
+  {
+    title: 'Priority resolving',
+    body: 'Your links are asked of our own resolvers first: not rate-limited, not shared with the public internet.',
+  },
+  {
+    title: 'One-tap ZIP bundles',
+    body: 'Carousel images and batched audio collect into a single archive instead of a dozen separate saves.',
+  },
+  {
+    title: 'No sponsor card',
+    body: 'Site-wide, immediately, on every page.',
+  },
+]

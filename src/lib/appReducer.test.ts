@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { autoOpensPreview, isSuccessMessage } from './appReducer'
+import {
+  autoOpensPreview,
+  isResolvingOrDownloading,
+  isSuccessMessage,
+} from './appReducer'
 
 const base = {
   platform: 'tiktok' as const,
@@ -13,10 +17,11 @@ describe('autoOpensPreview', () => {
     expect(autoOpensPreview(base)).toBe(true)
   })
 
-  it('stays shut for a generic link', () => {
-    // The route unknown hosts arrive on: we do not paint a full-size poster
-    // frame for content we know nothing about.
-    expect(autoOpensPreview({ ...base, platform: 'generic' })).toBe(false)
+  it('opens for a generic link the server verified as media', () => {
+    // The server only returns a generic downloadUrl after confirming it serves
+    // a file and not a web page, so by this point "is it really video" is
+    // answered — staying shut would cost every long-tail site a click.
+    expect(autoOpensPreview({ ...base, platform: 'generic' })).toBe(true)
   })
 
   it('stays shut when the platform is missing', () => {
@@ -37,11 +42,12 @@ describe('autoOpensPreview', () => {
     expect(autoOpensPreview({ ...base, hasVideo: false })).toBe(false)
   })
 
-  it('keeps generic shut even when every other signal says open', () => {
-    // Guards the ordering: `generic` must not be rescued by hasVideo.
+  it('keeps unknown payload shapes shut even when every other signal says open', () => {
+    // Guards the ordering: `undefined` (an older/foreign result shape) must
+    // not be rescued by hasVideo.
     expect(
       autoOpensPreview({
-        platform: 'generic',
+        platform: undefined,
         hasVideo: true,
         hasEmbed: false,
         isCarousel: false,
@@ -75,5 +81,46 @@ describe('isSuccessMessage', () => {
     '',
   ])('reads %s as not a win', (message) => {
     expect(isSuccessMessage(message)).toBe(false)
+  })
+})
+
+/**
+ * The banner's second gate. `isSuccessMessage` alone cannot tell a failure
+ * from a running commentary — "Preparing your download…" is not a win either —
+ * so the retry offer also asks whether anything is still in flight. Without
+ * this, every transfer in progress renders a button offering to restart it.
+ */
+describe('isResolvingOrDownloading', () => {
+  const idle = {
+    loading: false,
+    downloading: false,
+    downloadingAudio: false,
+    downloadingImages: false,
+  }
+
+  it('is false only when nothing at all is running', () => {
+    expect(isResolvingOrDownloading(idle)).toBe(false)
+  })
+
+  it.each([
+    'loading',
+    'downloading',
+    'downloadingAudio',
+    'downloadingImages',
+  ] as const)('is true while %s is set', (flag) => {
+    expect(isResolvingOrDownloading({ ...idle, [flag]: true })).toBe(true)
+  })
+
+  it('suppresses the retry offer under an in-flight message', () => {
+    const message = 'Preparing your download…'
+    const state = { ...idle, downloading: true }
+    // Exactly the banner's condition: not a win, but not a result either.
+    expect(isSuccessMessage(message)).toBe(false)
+    expect(!isSuccessMessage(message) && !isResolvingOrDownloading(state)).toBe(false)
+  })
+
+  it('offers the retry once a failure has settled', () => {
+    const message = 'Failed to download video file'
+    expect(!isSuccessMessage(message) && !isResolvingOrDownloading(idle)).toBe(true)
   })
 })

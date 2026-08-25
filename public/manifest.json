@@ -54,6 +54,19 @@
   ],
   "shortcuts": [
     {
+      "name": "Any video downloader",
+      "short_name": "Any link",
+      "description": "Paste a link from any site and save the video, audio, or images.",
+      "url": "/video-downloader",
+      "icons": [
+        {
+          "src": "/icons/192?v=3",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
       "name": "TikTok downloader",
       "short_name": "TikTok",
       "description": "Paste a public TikTok URL to save the video in HD.",

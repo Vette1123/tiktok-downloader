@@ -116,6 +116,217 @@ export async function ytdlpInfo(url: string): Promise<YtInfo | null> {
   }
 }
 
+/**
+ * A resolved direct media URL plus the metadata yt-dlp read off the page.
+ * `downloadUrl` is a progressive http(s) URL — the only shape that can be
+ * re-served through this app's own media proxy and played by a browser without
+ * ffmpeg. Manifest-only sources (HLS/DASH) return null rather than a URL that
+ * would play for nobody.
+ */
+export interface YtdlpProbe {
+  downloadUrl: string
+  title?: string
+  uploader?: string
+  duration?: number
+  thumbnail?: string
+}
+
+interface YtdlpFormat {
+  url?: string
+  ext?: string
+  protocol?: string
+  vcodec?: string
+  acodec?: string
+  height?: number
+  abr?: number
+}
+
+export interface YtdlpDump {
+  title?: string
+  uploader?: string
+  duration?: number
+  thumbnail?: string
+  // Single-video dumps mirror the chosen format onto the top level, codec
+  // fields included.
+  url?: string
+  protocol?: string
+  ext?: string
+  vcodec?: string
+  acodec?: string
+  formats?: YtdlpFormat[]
+  entries?: (YtdlpDump | null)[]
+  _type?: string
+}
+
+/** Progressive http(s) only — never an HLS/DASH manifest, never a fragment. */
+function isProgressiveHttp(format: YtdlpFormat): boolean {
+  if (!format.url || !/^https?:\/\//i.test(format.url)) return false
+  const protocol = format.protocol ?? 'https'
+  return protocol.startsWith('http') && !protocol.includes('m3u8') && !protocol.includes('dash')
+}
+
+/**
+ * yt-dlp leaves `vcodec`/`acodec` unset (null) on single muxed files for
+ * several hosts — measured on PornHub and Eporner, whose every rendition
+ * arrives exactly that way. Null means "unknown", and the file is by
+ * construction video+audio together; the only actively dangerous value is the
+ * literal `'none'`, which marks a single-track adaptive stream this app
+ * cannot use without ffmpeg. So: reject `'none'`, accept everything else.
+ */
+function carriesBothTracks(format: YtdlpFormat): boolean {
+  return format.vcodec !== 'none' && format.acodec !== 'none'
+}
+
+function isPlaylist(info: YtdlpDump): boolean {
+  return info._type === 'playlist' && Array.isArray(info.entries)
+}
+
+function firstEntry(info: YtdlpDump): YtdlpDump | null {
+  if (!isPlaylist(info)) return info
+  return (info.entries ?? []).find((e): e is YtdlpDump => Boolean(e?.url || e?.formats)) ?? null
+}
+
+/** Highest `height` wins; ties prefer mp4 over other containers and demote
+ * AV1, whose decode support in older players is still shaky (same reasoning as
+ * pageScrape's scorer). Undefined heights sort last.
+ *
+ * Every term is written "loser minus winner", because this feeds `sort` and a
+ * negative result puts `a` first: demoting AV1 is `aAv1 - bAv1` (a penalty for
+ * a sorts a later), so preferring mp4 must be `b - a`. Getting that backwards
+ * silently picks the container the comment says it avoids. */
+function byVideoQuality(a: YtdlpFormat, b: YtdlpFormat): number {
+  const ha = a.height ?? 0
+  const hb = b.height ?? 0
+  if (ha !== hb) return hb - ha
+  const aAv1 = /^av1|av01/i.test(a.vcodec ?? '') ? 1 : 0
+  const bAv1 = /^av1|av01/i.test(b.vcodec ?? '') ? 1 : 0
+  if (aAv1 !== bAv1) return aAv1 - bAv1
+  return (b.ext === 'mp4' ? 1 : 0) - (a.ext === 'mp4' ? 1 : 0)
+}
+
+/**
+ * Resolve ANY link to a direct progressive media URL with real metadata.
+ *
+ * This is the universal extractor: yt-dlp ships site-specific extractors for
+ * hundreds of hosts plus a generic one that reads every player shape they use,
+ * so it succeeds where tag-scraping finds nothing. It runs the extraction from
+ * this process's IP, so like `ytdlpInfo` it is only ever available where the
+ * binary can exist (local dev / a self-hosted box) — every call fails fast on
+ * Cloudflare via the same `nativeMediaAvailable()` gate, which keeps the Worker
+ * path byte-identical to today's.
+ *
+ * `kind: 'video'` picks the best progressive video+audio rendition (H.264 and
+ * ≤1080p preferred, so what comes back plays in a `<video>` tag everywhere);
+ * `kind: 'audio'` picks the best audio-only track in a browser-native container
+ * (m4a/mp3). Returns null on any failure or when nothing progressive exists.
+ */
+export async function ytdlpProbe(
+  url: string,
+  kind: 'video' | 'audio',
+): Promise<YtdlpProbe | null> {
+  if (!nativeMediaAvailable()) return null
+  try {
+    const ytdlp = await loadYtdlp()
+    // Chrome impersonation clears the TLS-fingerprint walls several hosts put
+    // up (measured: Eporner resets the plain connection mid-metadata and
+    // answers an impersonated one in full). The wrapper may predate the
+    // option, so a refusal here retries plainly rather than failing the URL.
+    const baseFlags = {
+      dumpSingleJson: true,
+      // The app downloads one file per paste, so only the first entry is ever
+      // read (see the unwrap below). `noPlaylist` takes the single video out
+      // of a `watch?v=…&list=…` link; `playlistItems: '1'` bounds the case it
+      // cannot help with — a bare playlist URL, where a full dump would
+      // extract every entry over the network before we discard all but one.
+      noPlaylist: true,
+      playlistItems: '1',
+      noWarnings: true,
+      noCheckCertificates: true,
+      retries: 2,
+    }
+    let dump: YtdlpDump | null = null
+    try {
+      dump = (await ytdlp(url, {
+        ...baseFlags,
+        impersonate: 'chrome',
+      } as Record<string, unknown>)) as YtdlpDump | null
+    } catch {
+      dump = (await ytdlp(url, baseFlags)) as YtdlpDump | null
+    }
+
+    // A playlist URL resolves to many entries; the app downloads one file per
+    // paste, so take the first playable entry exactly as the resolver does.
+    while (dump && isPlaylist(dump)) {
+      const entry = firstEntry(dump)
+      if (!entry) return null
+      dump = entry
+    }
+    if (!dump) return null
+
+    let chosen: YtdlpFormat | null = null
+    if (kind === 'audio') {
+      // m4a (AAC) and mp3 decode in every browser; opus/webm do not survive the
+      // audio proxy's audio/mpeg labelling everywhere, so they are skipped.
+      const audios = (dump.formats ?? []).filter(
+        (f) =>
+          isProgressiveHttp(f) &&
+          f.vcodec === 'none' &&
+          f.acodec !== 'none' &&
+          f.acodec != null &&
+          (f.ext === 'm4a' || f.ext === 'mp3'),
+      )
+      chosen =
+        audios.sort((a, b) => (b.abr ?? b.height ?? 0) - (a.abr ?? a.height ?? 0))[0] ?? null
+    } else {
+      // Video+audio in one progressive file. H.264 first (see ytdlpDownload for
+      // why HEVC breaks playback), then resolution, capped at 1080p. AV1 loses
+      // to anything equal because it is not in the h264 pool — older decoders.
+      const videos = (dump.formats ?? []).filter(
+        (f) =>
+          isProgressiveHttp(f) &&
+          carriesBothTracks(f) &&
+          (f.height ?? 0) <= 1080,
+      )
+      const h264 = videos.filter((f) => /^avc/i.test(f.vcodec ?? ''))
+      const pool = h264.length > 0 ? h264 : videos
+      chosen = pool.sort(byVideoQuality)[0] ?? null
+    }
+
+    // Some muxed sources put the single playable stream on the top-level url
+    // rather than listing formats (yt-dlp's generic extractor does this for
+    // plain <video src> pages).
+    const topLevel: YtdlpFormat = {
+      url: dump.url,
+      ext: dump.ext,
+      protocol: dump.protocol,
+      vcodec: kind === 'audio' ? 'none' : 'avc1',
+      acodec: 'mp4a',
+    }
+    if (!chosen && isProgressiveHttp(topLevel) && (kind === 'video' || dump.ext === 'm4a' || dump.ext === 'mp3')) {
+      chosen = topLevel
+    }
+    // An audio ask with no listed audio format can still take a muxed file —
+    // browsers pull the track out of an mp4 just as well.
+    if (!chosen && kind === 'audio') {
+      const muxed = (dump.formats ?? []).filter(
+        (f) => isProgressiveHttp(f) && carriesBothTracks(f) && (f.ext === 'mp4' || f.ext === 'm4a'),
+      )
+      chosen = muxed.sort(byVideoQuality)[0] ?? null
+    }
+    if (!chosen?.url) return null
+
+    return {
+      downloadUrl: chosen.url,
+      title: dump.title,
+      uploader: dump.uploader,
+      duration: typeof dump.duration === 'number' ? dump.duration : undefined,
+      thumbnail: dump.thumbnail,
+    }
+  } catch {
+    return null
+  }
+}
+
 export interface YtFile {
   file: string
   contentType: string

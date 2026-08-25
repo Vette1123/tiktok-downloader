@@ -91,6 +91,89 @@ export function clearHistory(): void {
   commit([])
 }
 
+/** The shape one exported entry takes — identical to what we store. */
+export type ExportedEntry = HistoryEntry
+
+/**
+ * Serialise the current list. A plain JSON array of the stored entries, so an
+ * import is the exact inverse and a user can read the file.
+ */
+export function exportHistory(): string {
+  return JSON.stringify(loadHistory(), null, 2)
+}
+
+function isEntry(value: unknown): value is HistoryEntry {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof (value as HistoryEntry).url === 'string' &&
+    typeof (value as HistoryEntry).title === 'string' &&
+    typeof (value as HistoryEntry).ts === 'number'
+  )
+}
+
+/**
+ * Fold imported entries into `existing`: newest first, incoming wins on URL
+ * collisions (an export is usually taken from another device precisely because
+ * it is newer), capped at MAX. Pure — tested directly, since localStorage does
+ * not exist in every environment this module loads in.
+ */
+export function mergeEntries(
+  existing: HistoryEntry[],
+  incoming: unknown[],
+  max = MAX,
+): { list: HistoryEntry[]; added: number } {
+  const valid = incoming.filter(isEntry)
+  if (valid.length === 0) return { list: existing, added: 0 }
+
+  // Snapshot of what existed before, for the added-count below: identity is
+  // how an untouched row is told apart from one an import replaced.
+  const oldByUrl = new Map(existing.map((e) => [e.url, e]))
+  const byUrl = new Map(oldByUrl)
+  for (const entry of valid) byUrl.set(entry.url, entry)
+
+  const list = [...byUrl.values()]
+    .sort((a, b) => b.ts - a.ts)
+    .slice(0, max)
+  // A row counts as added when the url was not there before, or when an
+  // incoming entry replaced it — which shows up as a different object than
+  // the snapshot held, since untouched rows keep their exact identity.
+  let added = 0
+  for (const item of list) {
+    if (oldByUrl.get(item.url) !== item) added += 1
+  }
+  return { list, added }
+}
+
+/**
+ * Parse an exported file and fold it into the live history.
+ * Returns null when the file is not readable JSON at all; otherwise reports
+ * how many entries were newly added.
+ */
+export function importHistory(
+  json: string,
+): { added: number; total: number } | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(json)
+  } catch {
+    return null
+  }
+  if (!Array.isArray(parsed)) return null
+
+  const { list, added } = mergeEntries(loadHistory(), parsed)
+  if (added > 0) {
+    try {
+      window.localStorage.setItem(KEY, JSON.stringify(list))
+    } catch {
+      // quota / disabled — nothing to do but report honestly below.
+      return { added: 0, total: loadHistory().length }
+    }
+    commit(list)
+  }
+  return { added, total: list.length }
+}
+
 /**
  * Subscription layer, so components can read the list with
  * `useSyncExternalStore` instead of seeding `useState` from a mount effect.

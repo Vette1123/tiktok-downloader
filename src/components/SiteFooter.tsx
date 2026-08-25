@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { FilmIcon, GitHubIcon, PortfolioIcon } from '@/components/icons'
+import { LanguagePicker } from '@/components/LanguagePicker'
 import { PlayAppsMenu } from '@/components/PlayAppsMenu'
 import { siteConfig } from '@/config/site'
 
@@ -51,6 +52,7 @@ export function SiteFooter() {
             <GitHubIcon className='h-4 w-4' />
             GitHub
           </a>
+          <LanguagePicker />
         </div>
 
         <div className='flex flex-wrap items-center justify-center gap-x-5 gap-y-2'>

@@ -73,6 +73,7 @@ export async function runBatch(
   resolveFn: (url: string, signal?: AbortSignal) => Promise<ResolveResult>,
   onUpdate: (items: BatchItem[]) => void,
   signal?: AbortSignal,
+  concurrency: number = BATCH_CONCURRENCY,
 ): Promise<BatchItem[]> {
   const items: BatchItem[] = urls.map((url) => ({ url, status: 'queued' }))
   let cursor = 0
@@ -125,7 +126,7 @@ export async function runBatch(
     }
   }
 
-  const lanes = Math.min(BATCH_CONCURRENCY, items.length)
+  const lanes = Math.max(1, Math.min(concurrency, items.length))
   await Promise.all(Array.from({ length: lanes }, () => worker()))
   return items
 }

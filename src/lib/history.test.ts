@@ -1,0 +1,54 @@
+import { describe, expect, it } from 'vitest'
+import { mergeEntries } from './history'
+import type { HistoryEntry } from './history'
+
+function entry(url: string, ts: number): HistoryEntry {
+  return { url, title: `t-${url}`, author: '', ts }
+}
+
+describe('mergeEntries', () => {
+  it('adds incoming entries and sorts newest-first', () => {
+    const existing = [entry('a', 100)]
+    const { list, added } = mergeEntries(existing, [entry('b', 300), entry('c', 200)])
+    expect(added).toBe(2)
+    expect(list.map((e) => e.url)).toEqual(['b', 'c', 'a'])
+  })
+
+  it('lets an imported entry win a URL collision', () => {
+    const existing = [entry('a', 100)]
+    const { list, added } = mergeEntries(existing, [entry('a', 999)])
+    // The URL was already there, but the row itself is new — count it.
+    expect(added).toBe(1)
+    expect(list[0].ts).toBe(999)
+  })
+
+  it('counts a re-import of the same file as zero additions', () => {
+    const current = [entry('a', 300), entry('b', 100)]
+    const { added } = mergeEntries(current, [...current])
+    expect(added).toBe(0)
+  })
+
+  it('caps the merged list and drops the oldest overflow', () => {
+    const existing = [entry('a', 100), entry('b', 90), entry('c', 80)]
+    const { list } = mergeEntries(existing, [entry('d', 50)], 3)
+    expect(list.map((e) => e.url)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('ignores malformed rows instead of failing the whole import', () => {
+    const { list, added } = mergeEntries([], [
+      { url: 7 },
+      'junk',
+      null,
+      { url: 'ok', title: 'fine', ts: 5 },
+    ])
+    expect(added).toBe(1)
+    expect(list.map((e) => e.url)).toEqual(['ok'])
+  })
+
+  it('returns unchanged when nothing valid arrives', () => {
+    const existing = [entry('a', 1)]
+    const { list, added } = mergeEntries(existing, [null, 42])
+    expect(added).toBe(0)
+    expect(list).toBe(existing) // same reference — callers can skip a write
+  })
+})

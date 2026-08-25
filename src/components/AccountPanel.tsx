@@ -469,9 +469,13 @@ function FreePlanPitch() {
   return (
     <ul className='mt-4 grid gap-2 sm:grid-cols-2'>
       {PRO_BENEFITS.map((benefit) => (
-        <li key={benefit} className='flex items-start gap-2 text-sm text-white/70'>
+        <li
+          key={benefit.title}
+          className='flex items-start gap-2 text-sm text-white/70'
+          title={benefit.body}
+        >
           <CheckIcon className='mt-0.5 h-4 w-4 shrink-0 text-cyan-300' aria-hidden />
-          {benefit}
+          {benefit.title}
         </li>
       ))}
     </ul>

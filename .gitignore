@@ -51,3 +51,4 @@ next-env.d.ts
 # Local tooling scratch
 .zcode/
 .prof/
+.worker-size-check/

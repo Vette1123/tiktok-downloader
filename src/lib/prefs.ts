@@ -20,13 +20,24 @@
  */
 
 import { useSyncExternalStore } from 'react'
-import { DEFAULTS, type Format, type Prefs, type Quality, isFormat, isQuality, mergePrefs, normalisePrefs } from './prefsCore'
+import {
+  DEFAULTS,
+  type Format,
+  type Prefs,
+  type Quality,
+  isFormat,
+  isQuality,
+  isSubtitleLang,
+  mergePrefs,
+  normalisePrefs,
+} from './prefsCore'
 
 export { mergePrefs, normalisePrefs }
 export type { Format, Prefs, Quality }
 
 const QUALITY_KEY = 'smd:quality'
 const FORMAT_KEY = 'smd:format'
+const SUBTITLE_LANG_KEY = 'smd:subtitle-lang'
 
 let cache: Prefs | null = null
 const listeners = new Set<() => void>()
@@ -35,9 +46,11 @@ function readStored(): Prefs {
   try {
     const quality = window.localStorage.getItem(QUALITY_KEY)
     const format = window.localStorage.getItem(FORMAT_KEY)
+    const subtitleLang = window.localStorage.getItem(SUBTITLE_LANG_KEY)
     return {
       quality: isQuality(quality) ? quality : DEFAULTS.quality,
       format: isFormat(format) ? format : DEFAULTS.format,
+      ...(isSubtitleLang(subtitleLang) ? { subtitleLang } : {}),
     }
   } catch {
     // Storage blocked (private mode, cookie policy) — defaults are fine.
@@ -88,6 +101,20 @@ export function setFormat(format: Format): void {
   commit({ ...current, format })
 }
 
+export function setSubtitleLang(lang: string | undefined): void {
+  const current = getSnapshot()
+  if (current.subtitleLang === lang) return
+  if (lang) write(SUBTITLE_LANG_KEY, lang)
+  else {
+    try {
+      window.localStorage.removeItem(SUBTITLE_LANG_KEY)
+    } catch {
+      // ignore
+    }
+  }
+  commit({ ...current, subtitleLang: lang })
+}
+
 export function usePrefs(): Prefs {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
 }
@@ -107,6 +134,9 @@ export function adoptServerPrefs(raw: unknown): void {
 
   if (merged.quality !== getSnapshot().quality) setQuality(merged.quality)
   if (merged.format !== getSnapshot().format) setFormat(merged.format)
+  if (merged.subtitleLang !== getSnapshot().subtitleLang) {
+    setSubtitleLang(merged.subtitleLang)
+  }
 }
 
 /** Write the current preferences to the account, if there is one. */
