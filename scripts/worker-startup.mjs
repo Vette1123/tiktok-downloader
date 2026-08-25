@@ -33,13 +33,14 @@ import { join } from 'node:path'
 import vm from 'node:vm'
 
 /**
- * 200 KiB against 160 KiB shipped today.
+ * 225 KiB against 214.7 KiB shipped by the Chinese-platform build.
  *
- * Loose enough that ordinary feature work never trips it, tight enough that
- * pulling in one more sprawling dependency does. Raise it deliberately, with a
- * `pnpm cf:startup` number in the commit message — not to make a build pass.
+ * The four dependency-free platform adapters add about 15 KiB and measured
+ * 4.22 ms total startup in CI (2026-08-25), still comfortably inside the free
+ * plan's 10 ms request CPU budget. The small remaining margin continues to
+ * catch an accidental dependency or a large parser table.
  */
-const MAX_BUNDLE_BYTES = 200 * 1024
+const MAX_BUNDLE_BYTES = 225 * 1024
 
 /** wrangler rejects the upload past this on the free plan. */
 const MAX_GZIPPED_BYTES = 3 * 1024 * 1024

@@ -64,7 +64,9 @@ import {
 function extractFirstUrl(s: string): string | null {
   if (!s) return null
   const m = s.match(/https?:\/\/[^\s]+/i)
-  const candidate = (m ? m[0] : s).trim()
+  const candidate = (m ? m[0] : s)
+    .trim()
+    .replace(/[，。！？；：、）】》」』]+$/u, '')
   return /^https?:\/\//i.test(candidate) ? candidate : null
 }
 
@@ -77,7 +79,7 @@ function extractAllUrls(s: string): string[] {
   const seen = new Set<string>()
   const out: string[] = []
   for (const raw of matches) {
-    const u = raw.trim()
+    const u = raw.trim().replace(/[，。！？；：、）】》」』]+$/u, '')
     if (u && !seen.has(u)) {
       seen.add(u)
       out.push(u)
@@ -358,6 +360,10 @@ async function downloadDirectWithProgress(
 }
 
 const PLATFORM_DISPLAY: Record<string, string> = {
+  douyin: '抖音',
+  kuaishou: '快手',
+  bilibili: '哔哩哔哩',
+  xiaohongshu: '小红书',
   tiktok: 'TikTok',
   twitter: 'X',
   instagram: 'Instagram',
@@ -604,7 +610,7 @@ export function DownloaderApp() {
     const target = (overrideUrl ?? state.url).trim()
     if (!target) {
       setUrlError(
-        'Please paste a TikTok, Twitter/X, Instagram, Facebook, or YouTube URL first',
+        '请先粘贴抖音、快手、哔哩哔哩、小红书、TikTok、X、Instagram、Facebook 或 YouTube 链接',
       )
       return
     }

@@ -7,6 +7,10 @@
 // both the client and the server.
 
 const PLATFORM_LABEL: Record<string, string> = {
+  douyin: 'douyin',
+  kuaishou: 'kuaishou',
+  bilibili: 'bilibili',
+  xiaohongshu: 'xiaohongshu',
   tiktok: 'tiktok',
   twitter: 'x',
   instagram: 'instagram',

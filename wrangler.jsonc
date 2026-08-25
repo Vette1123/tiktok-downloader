@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "social-media-downloader",
+  "name": "social-media-downloader-cn",
 
   // A small hand-written Worker, not a framework adapter. The site is a static
   // export served from `assets` below; this script only answers /api/*. See
@@ -61,17 +61,6 @@
     "enabled": true
   },
 
-  // Accounts and subscription state. Only the auth and billing routes touch
-  // this; /api/download never reads it, which is what keeps the resolve path
-  // free of database latency. See the accounts design doc.
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "social-media-downloader",
-      "database_id": "a8831143-b1d2-43a6-916b-e1ac27349fb1"
-    }
-  ],
-
   // Native binaries can't run on workerd (no subprocesses, no writable FS), so
   // the yt-dlp / ffmpeg packages are aliased to a stub that throws on use. The
   // three routes that touch them already degrade gracefully (they were dead on
@@ -88,7 +77,7 @@
   // build time, so a Worker var would be read far too late — it is set as build
   // env in the deploy workflow instead.
   //
-  // Secrets (COBALT_API_KEY, IG_SESSIONID, UPSTASH_REDIS_REST_URL,
+  // Secrets (IFPHP_API_KEY, COBALT_API_KEY, IG_SESSIONID, UPSTASH_REDIS_REST_URL,
   // UPSTASH_REDIS_REST_TOKEN, REGISTRY_KEY, COBALT_API_URL, PRO_TOKEN_SECRET,
   // GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, CREEM_API_KEY,
   // CREEM_WEBHOOK_SECRET, SCRAPE_UNLOCKER_URL) must NOT be listed here

@@ -23,6 +23,37 @@ export function getMediaReferer(url: string): string {
   if (url.includes('tikwm.com')) return 'https://www.tikwm.com/'
 
   if (
+    url.includes('douyin.com') ||
+    url.includes('douyinvod.com') ||
+    url.includes('douyinstatic.com') ||
+    url.includes('bytecdn') ||
+    url.includes('bytedance')
+  )
+    return 'https://www.douyin.com/'
+
+  if (
+    url.includes('kuaishou.com') ||
+    url.includes('chenzhongtech.com') ||
+    url.includes('kwimgs.com') ||
+    url.includes('yximgs.com')
+  )
+    return 'https://www.kuaishou.com/'
+
+  if (
+    url.includes('bilibili.com') ||
+    url.includes('bilivideo.com') ||
+    url.includes('hdslb.com')
+  )
+    return 'https://www.bilibili.com/'
+
+  if (
+    url.includes('xiaohongshu.com') ||
+    url.includes('xhscdn.com') ||
+    url.includes('sns-webpic')
+  )
+    return 'https://www.xiaohongshu.com/'
+
+  if (
     url.includes('twimg.com') ||
     url.includes('twitter.com') ||
     url.includes('x.com')
