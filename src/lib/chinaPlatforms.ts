@@ -256,6 +256,81 @@ function isXiaohongshuImagePost(value: unknown): boolean {
   return walk(value)
 }
 
+function xiaohongshuNote(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object') return null
+  if (Array.isArray(value)) {
+    for (const child of value) {
+      const note = xiaohongshuNote(child)
+      if (note) return note
+    }
+    return null
+  }
+  const record = value as Record<string, unknown>
+  if (
+    record.video && typeof record.video === 'object'
+  ) {
+    return record
+  }
+  if (
+    Array.isArray(record.imageList) ||
+    Array.isArray(record.image_list)
+  ) {
+    return record
+  }
+  for (const child of Object.values(record)) {
+    const note = xiaohongshuNote(child)
+    if (note) return note
+  }
+  return null
+}
+
+function xiaohongshuImages(note: Record<string, unknown>): string[] {
+  const list = note.imageList || note.image_list
+  if (!Array.isArray(list)) return []
+  return unique(
+    list.map((item) => {
+      if (typeof item === 'string') return item
+      if (!item || typeof item !== 'object') return ''
+      const image = item as Record<string, unknown>
+      const info = Array.isArray(image.infoList) ? image.infoList[0] : null
+      return (
+        text(image.urlDefault) ||
+        text(image.url) ||
+        (info && typeof info === 'object' ? text((info as Record<string, unknown>).url) : '')
+      )
+    }),
+  )
+}
+
+function xiaohongshuVideo(note: Record<string, unknown>): string {
+  const video = note.video
+  if (!video || typeof video !== 'object') return ''
+  const record = video as Record<string, unknown>
+  const media = record.media
+  const streams =
+    media && typeof media === 'object'
+      ? (media as Record<string, unknown>).stream
+      : null
+  if (streams && typeof streams === 'object') {
+    for (const codec of ['h264', 'h265', 'av1']) {
+      const items = (streams as Record<string, unknown>)[codec]
+      if (!Array.isArray(items) || !items.length || typeof items[0] !== 'object') continue
+      const stream = items[0] as Record<string, unknown>
+      const backups = Array.isArray(stream.backupUrls) ? stream.backupUrls : []
+      const url = text(stream.masterUrl) || text(backups[0])
+      if (url) return url
+    }
+  }
+  const consumer = record.consumer
+  const key =
+    consumer && typeof consumer === 'object'
+      ? text((consumer as Record<string, unknown>).originVideoKey)
+      : ''
+  return (
+    key ? `https://sns-video-bd.xhscdn.com/${key}` : ''
+  ) || text(record.play_url) || text(record.playUrl) || text(record.url)
+}
+
 function mediaFromObject(
   value: unknown,
   platform?: ChinesePlatform,
@@ -388,6 +463,24 @@ export function parseIfphpPayload(
   const code = (payload as Record<string, unknown>).code
   const successfulCodes: unknown[] = [0, 200, '0', '200']
   if (code !== undefined && !successfulCodes.includes(code)) return null
+  const note = platform === 'xiaohongshu' ? xiaohongshuNote(payload) : null
+  if (note) {
+    const noteType = text(note.type).toLowerCase()
+    const noteImages = xiaohongshuImages(note)
+    const noteVideo = noteType === 'video' ? xiaohongshuVideo(note) : ''
+    if (noteImages.length || noteVideo) {
+      const parsed = result({
+        id: stringAtPath(note, ['noteId', 'note_id', 'id']) || `xiaohongshu_${Date.now()}`,
+        sourceUrl,
+        title: stringAtPath(note, ['title', 'desc', 'text']) || '小红书笔记',
+        author: stringAtPath(note, ['nickname', 'author_name', 'username', 'author']),
+        video: noteVideo,
+        images: noteImages,
+        staticGallery: noteImages.length > 0,
+      })
+      if (parsed) return preferXiaohongshuImages(parsed)
+    }
+  }
   const media = mediaFromObject(
     payload,
     platform,
@@ -490,12 +583,46 @@ async function resolveXiaohongshu(sourceUrl: string): Promise<VideoData | null> 
         jsonObjectAfter(html, 'window.__INITIAL_STATE__') ||
         jsonObjectAfter(html, '__INITIAL_STATE__')
       if (!state) return resolveIfphp(sourceUrl, 'xiaohongshu')
+      const noteId = page.url.match(/\/(?:discovery\/item|explore)\/([\w-]+)/)?.[1]
+      const stateRecord = state as Record<string, unknown>
+      const noteState = stateRecord.note
+      const noteMap =
+        noteState && typeof noteState === 'object'
+          ? (noteState as Record<string, unknown>).noteDetailMap
+          : null
+      const entries = noteMap && typeof noteMap === 'object' ? noteMap as Record<string, unknown> : {}
+      const entry = (noteId && entries[noteId]) || Object.values(entries)[0]
+      const note =
+        entry && typeof entry === 'object' && (entry as Record<string, unknown>).note
+          ? (entry as Record<string, unknown>).note
+          : entry || xiaohongshuNote(state)
+      if (note && typeof note === 'object' && !Array.isArray(note)) {
+        const noteRecord = note as Record<string, unknown>
+        const noteImages = xiaohongshuImages(noteRecord)
+        const noteVideo = text(noteRecord.type).toLowerCase() === 'video'
+          ? xiaohongshuVideo(noteRecord)
+          : ''
+        if (noteImages.length || noteVideo) {
+          const parsed = result({
+            id: stringAtPath(noteRecord, ['noteId', 'note_id', 'id']) || noteId || 'xiaohongshu',
+            sourceUrl,
+            title:
+              stringAtPath(noteRecord, ['title', 'desc']) ||
+              htmlTitle(html).replace(/\s*[-_|].*小红书.*$/i, '') ||
+              '小红书笔记',
+            author: stringAtPath(noteRecord, ['nickname', 'userName', 'username']),
+            video: noteVideo,
+            images: noteImages,
+            staticGallery: noteImages.length > 0,
+          })
+          if (parsed) return preferXiaohongshuImages(parsed)
+        }
+      }
       const media = mediaFromObject(
         state,
         'xiaohongshu',
         isXiaohongshuImagePost(state),
       )
-      const noteId = page.url.match(/\/(?:discovery\/item|explore)\/([\w-]+)/)?.[1]
       const parsed = result({
         id: stringAtPath(state, ['noteId', 'note_id', 'id']) || noteId || 'xiaohongshu',
         sourceUrl,
