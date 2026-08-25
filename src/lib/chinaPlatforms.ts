@@ -340,7 +340,7 @@ export function parseIfphpPayload(
     thumbnail: stringAtPath(payload, ['cover', 'thumbnail', 'pic']),
     images: media.images,
     staticGallery:
-      platform === 'xiaohongshu' ||
+      (platform === 'xiaohongshu' && media.images.length > 0) ||
       (platform === 'instagram' && !video && media.images.length > 0),
   })
   return platform === 'xiaohongshu' && parsed
