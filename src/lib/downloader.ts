@@ -703,6 +703,21 @@ const IG_COOKIE_ORDER: readonly { name: string; env: string }[] = [
   { name: 'wd', env: 'IG_WD' },
 ]
 
+/**
+ * Facebook session cookies used by its logged-in HTML/plugin surfaces.
+ * `FB_COOKIE_HEADER` is accepted for sessions with additional Meta cookies;
+ * its value must be the header value only, without a literal `Cookie:` prefix.
+ * Both forms remain server-side secrets and are never sent to a CDN or Cobalt.
+ */
+const FB_COOKIE_ORDER: readonly { name: string; env: string }[] = [
+  { name: 'datr', env: 'FB_DATR' },
+  { name: 'sb', env: 'FB_SB' },
+  { name: 'c_user', env: 'FB_C_USER' },
+  { name: 'xs', env: 'FB_XS' },
+  { name: 'fr', env: 'FB_FR' },
+  { name: 'wd', env: 'FB_WD' },
+]
+
 export class Downloader {
   // Preferred video quality for the extractors that expose a quality knob
   // (Cobalt's videoQuality, tikwm's hd flag). 'hd' = best available (default);
@@ -873,6 +888,38 @@ export class Downloader {
       return value ? `${name}=${value}` : ''
     }).filter(Boolean)
     return [...pairs, `sessionid=${sessionId}`].join('; ')
+  }
+
+  /** Attach Facebook Cookie only to a trusted, official Facebook request. */
+  private get facebookCookie(): string {
+    if (!this.credentialed) return ''
+    const full = process.env.FB_COOKIE_HEADER?.trim()
+    if (full && !/[\r\n]/.test(full)) return full
+
+    return FB_COOKIE_ORDER.map(({ name, env }) => {
+      const value = process.env[env]?.trim()
+      return value ? `${name}=${value}` : ''
+    })
+      .filter(Boolean)
+      .join('; ')
+  }
+
+  private facebookHeaders(
+    url: string,
+    headers: Record<string, string>,
+  ): Record<string, string> {
+    let official = false
+    try {
+      const hostname = new URL(url).hostname.toLowerCase()
+      official =
+        hostname === 'facebook.com' ||
+        hostname.endsWith('.facebook.com') ||
+        hostname === 'fb.watch'
+    } catch {
+      official = false
+    }
+    const cookie = this.facebookCookie
+    return official && cookie ? { ...headers, Cookie: cookie } : headers
   }
 
   /**
@@ -1721,7 +1768,10 @@ export class Downloader {
       return null
     }
     const response = await http.get(resolvedUrl, {
-      headers: { 'User-Agent': LINK_CRAWLER_AGENT, Accept: 'text/html' },
+      headers: this.facebookHeaders(resolvedUrl, {
+        'User-Agent': LINK_CRAWLER_AGENT,
+        Accept: 'text/html',
+      }),
       timeout: 15000,
       validateStatus: () => true,
     })
@@ -2777,9 +2827,9 @@ export class Downloader {
       const response = await send(url, {
         maxRedirects: 5,
         validateStatus: () => true,
-        headers: {
+        headers: this.facebookHeaders(url, {
           'User-Agent': share ? LINK_CRAWLER_AGENT : this.userAgent,
-        },
+        }),
         timeout: 12000,
       })
       return response.request?.res?.responseUrl || url
@@ -2863,14 +2913,14 @@ export class Downloader {
       resolvedUrl,
     )}`
     const response = await http.get(embedUrl, {
-      headers: {
+      headers: this.facebookHeaders(embedUrl, {
         'User-Agent': this.userAgent,
         Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
         'Sec-Fetch-Dest': 'document',
         'Sec-Fetch-Mode': 'navigate',
         'Sec-Fetch-Site': 'none',
-      },
+      }),
       timeout: 20000,
     })
     const html = typeof response.data === 'string' ? response.data : ''
@@ -2886,7 +2936,7 @@ export class Downloader {
     originalUrl: string,
   ): Promise<VideoData | null> {
     const response = await http.get(resolvedUrl, {
-      headers: {
+      headers: this.facebookHeaders(resolvedUrl, {
         'User-Agent': this.userAgent,
         Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
@@ -2894,7 +2944,7 @@ export class Downloader {
         'Sec-Fetch-Mode': 'navigate',
         'Sec-Fetch-Site': 'none',
         'Upgrade-Insecure-Requests': '1',
-      },
+      }),
       timeout: 20000,
     })
     const html = typeof response.data === 'string' ? response.data : ''

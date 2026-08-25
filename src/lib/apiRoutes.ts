@@ -235,20 +235,20 @@ export async function handleDownload(
     const claims = await readProToken(request)
     const priority = claims?.p === true
     /**
-     * Whether this resolve may carry the operator's own Instagram session.
+     * Whether this resolve may carry the operator's own platform Cookie.
      *
-     * Set only by the `ig` grant, which is written into a `users` row by hand
-     * and is never offered for sale, bundled with Pro, or derivable from one.
-     * `=== true` rather than a truthy check: an absent claim must read as false.
+     * Instagram also accepts the legacy `ig` grant. Facebook is restricted to
+     * the private web/API gate because its Cookie is a separate operator secret.
      */
     const privateAuth = request.headers.get(PRIVATE_AUTH_HEADER)
     const privateAuthenticated = privateAuth === 'web' || privateAuth === 'api'
-    // The operator's Instagram session is never attached to anonymous traffic
+    // The operator's platform session is never attached to anonymous traffic
     // or to another platform. The Worker adds the trusted internal header only
     // after web-session/API-key verification; external callers cannot mint it.
     const credentialed =
-      platform === 'instagram' &&
-      (privateAuthenticated || claims?.c === true)
+      (platform === 'instagram' &&
+        (privateAuthenticated || claims?.c === true)) ||
+      (platform === 'facebook' && privateAuthenticated)
 
     // Serve an identical recent resolve from cache — skips a full extractor
     // round-trip for repeats (double-tap, HD/SD/MP3 re-pick, Recent re-tap, or
