@@ -271,7 +271,7 @@ function mediaFromObject(
     if (typeof current === 'string' && /^https?:\/\//i.test(current)) {
       const normalized = unescapePage(current)
       const videoFile = /\.(?:mp4|m4v|mov|webm)(?:[?#]|$)/i.test(normalized)
-      const imagePath = /(?:images?|image_list|photo_list|photos?|pics?|img)/i.test(
+      const imagePath = /(?:^|\.)(?:images?|image_list|imageList|photo_list|photoList|photos?|pics?|img)(?:\.|$)/i.test(
         keyPath,
       )
       const coverPath = /(?:cover|thumbnail|thumb|poster|avatar|pic)(?:[._]|$)/i.test(
@@ -289,6 +289,21 @@ function mediaFromObject(
       const directMediaUrl = /(?:^|\.)(?:url|src|image_url|imageUrl)$/i.test(
         keyPath,
       )
+      const directXhsImage =
+        imagePost &&
+        directMediaUrl &&
+        keyPath.split('.').length <= 3
+      const xhsStillUrl =
+        platform === 'xiaohongshu' &&
+        xhsImageHost &&
+        (directXhsImage || /\.video\.url$/i.test(keyPath))
+      const xhsVideoPath =
+        platform === 'xiaohongshu' &&
+        /(?:^|\.)video(?:\.|$)/i.test(keyPath) &&
+        !imagePost &&
+        !imagePath &&
+        !coverPath &&
+        !xhsStillUrl
 
       // Xiaohongshu image URLs often omit a file extension (for example the
       // `!nd_dft_wlteh_webp_3` suffix). Treat explicit image collections, or
@@ -297,16 +312,16 @@ function mediaFromObject(
       if (
         platform === 'xiaohongshu' &&
         !videoFile &&
-        (((!coverPath || imagePost) && xhsImageHost) ||
-          imagePath ||
-          (imagePost && directMediaUrl) ||
-          (directMediaUrl && (imageFile || xhsImageHost)))
+        ((imagePath && (imageFile || xhsImageHost)) ||
+          xhsStillUrl ||
+          (directMediaUrl && imageFile))
       ) {
         images.push(normalized)
       } else if (
-        /(?:video|play|wm|nwm|master|origin|download|url)/i.test(keyPath) &&
+        (xhsVideoPath ||
+          /(?:video|play|wm|nwm|master|origin|download|url)/i.test(keyPath)) &&
         !imageFile &&
-        !xhsImageHost
+        (!xhsImageHost || xhsVideoPath)
       ) {
         videos.push(normalized)
       }
