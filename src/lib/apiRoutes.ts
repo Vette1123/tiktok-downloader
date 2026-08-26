@@ -157,7 +157,7 @@ export function resolveCacheKey(
   // Bump when the normaliser's media classification changes. Otherwise a
   // previously cached, misclassified Xiaohongshu image post could keep
   // returning the old bogus video payload for the cache TTL after deployment.
-  return `resolve-v3|${type}|${quality}|${mode}|${url}`
+  return `resolve-v4|${type}|${quality}|${mode}|${url}`
 }
 
 /**

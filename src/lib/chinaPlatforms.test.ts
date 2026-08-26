@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  isDouyinImagePage,
   parseIfphpPayload,
   parseKuaishouHtml,
   preferXiaohongshuImages,
@@ -23,6 +24,16 @@ describe('Chinese share links', () => {
       'https://v.douyin.com/tgZMRpn8Zog/',
     )
     expect(detectPlatform(caption)).toBe('douyin')
+  })
+})
+
+describe('Douyin image-post detection', () => {
+  it('recognises the aweme_images marker and does not mistake soundtrack MP4 for a video', () => {
+    expect(
+      isDouyinImagePage(
+        '<img src="https://p26-sign.douyinpic.com/cover.jpeg?biz_tag=aweme_images"><script src="https://sf26-sign.douyinstatic.com/soundtrack.mp4"></script>',
+      ),
+    ).toBe(true)
   })
 })
 
@@ -74,6 +85,31 @@ describe('IF-PHP response normalisation', () => {
       author: '作者乙',
       downloadUrl: 'https://cdn.example/video?id=123',
     })
+  })
+
+  it('keeps a declared Douyin image gallery as images when a soundtrack MP4 is also present', () => {
+    const parsed = parseIfphpPayload(
+      {
+        code: 200,
+        data: {
+          aweme_id: 'photo-123',
+          type: 'image',
+          title: '抖音图集',
+          image_list: [
+            { url: 'https://p3.douyinpic.com/one.jpeg' },
+            { url: 'https://p3.douyinpic.com/two.jpeg' },
+          ],
+          music: { play_url: 'https://sf26.douyinstatic.com/soundtrack.mp4' },
+        },
+      },
+      'https://v.douyin.com/example/',
+      'douyin',
+    )
+    expect(parsed?.downloadUrl).toBe('')
+    expect(parsed?.images?.map((image) => image.url)).toEqual([
+      'https://p3.douyinpic.com/one.jpeg',
+      'https://p3.douyinpic.com/two.jpeg',
+    ])
   })
 
   it('rejects an API error response', () => {

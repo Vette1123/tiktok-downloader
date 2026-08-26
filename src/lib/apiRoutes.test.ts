@@ -30,7 +30,7 @@ describe('resolveCacheKey', () => {
    */
   it('is identical regardless of who is asking', () => {
     expect(resolveCacheKey('video', 'hd', 'auto', 'https://x.com/a')).toBe(
-      'resolve-v3|video|hd|auto|https://x.com/a',
+      'resolve-v4|video|hd|auto|https://x.com/a',
     )
   })
 })

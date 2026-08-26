@@ -61,6 +61,15 @@ function absoluteMediaUrls(value: string): string[] {
   )
 }
 
+/**
+ * Douyin photo posts expose this marker on their share pages.  They also
+ * expose an MP4 URL for the soundtrack, so treating the first MP4 as a video
+ * produces the familiar blank-video-with-audio result.
+ */
+export function isDouyinImagePage(html: string): boolean {
+  return /\baweme_images\b/i.test(unescapePage(html))
+}
+
 async function fetchPage(url: string, referer?: string): Promise<Response> {
   return fetch(url, {
     redirect: 'follow',
@@ -372,11 +381,17 @@ function mediaFromObject(
       // an image-typed note's direct media URL, as images before the generic
       // `url`/`download` video heuristic gets a chance to claim them.
       if (
-        platform === 'xiaohongshu' &&
         !videoFile &&
-        ((imagePath && (imageFile || xhsImageHost)) ||
-          xhsStillUrl ||
-          (directMediaUrl && imageFile))
+        (
+          // An explicit images/image_list/photo_list array is a gallery on
+          // every supported Chinese platform. This is particularly important
+          // for Douyin, whose gallery pages also advertise soundtrack MP4s.
+          (imagePath && imageFile) ||
+          (platform === 'xiaohongshu' &&
+            ((imagePath && xhsImageHost) ||
+              xhsStillUrl ||
+              (directMediaUrl && imageFile)))
+        )
       ) {
         images.push(normalized)
       } else if (
@@ -468,12 +483,20 @@ export function parseIfphpPayload(
       if (parsed) return preferXiaohongshuImages(parsed)
     }
   }
+  const hasDeclaredImagePost = isXiaohongshuImagePost(payload)
   const media = mediaFromObject(
     payload,
     platform,
-    platform === 'xiaohongshu' && isXiaohongshuImagePost(payload),
+    platform === 'xiaohongshu' && hasDeclaredImagePost,
   )
   const video = media.videos.find((url) => url !== sourceUrl)
+  // A Douyin gallery frequently includes an MP4 soundtrack in the same API
+  // payload. When an explicit image collection is present, the stills are the
+  // post media and that MP4 must not become the downloadable "video".
+  const staticGallery =
+    (platform === 'xiaohongshu' || platform === 'douyin') &&
+    hasDeclaredImagePost &&
+    media.images.length > 0
   const parsed = result({
     id:
       stringAtPath(payload, ['aweme_id', 'photoId', 'bvid', 'note_id', 'id']) ||
@@ -481,12 +504,12 @@ export function parseIfphpPayload(
     sourceUrl,
     title: stringAtPath(payload, ['title', 'desc', 'text', 'caption']) || `${platform} 媒体`,
     author: stringAtPath(payload, ['nickname', 'author_name', 'username', 'author']),
-    // When Xiaohongshu provides both halves of a Live Photo, keep the still
-    // images. A normal video note has no image list and therefore keeps video.
-    video: platform === 'xiaohongshu' && media.images.length ? undefined : video,
+    // When a photo post includes a soundtrack or a Live Photo motion stream,
+    // keep the still images. A normal video has no explicit image collection.
+    video: staticGallery ? undefined : video,
     thumbnail: stringAtPath(payload, ['cover', 'thumbnail', 'pic']),
     images: media.images,
-    staticGallery: platform === 'xiaohongshu' && media.images.length > 0,
+    staticGallery,
   })
   return platform === 'xiaohongshu' && parsed
     ? preferXiaohongshuImages(parsed)
@@ -527,6 +550,20 @@ async function resolveDouyin(sourceUrl: string): Promise<VideoData | null> {
     const page = await fetchPage(sourceUrl, 'https://www.douyin.com/')
     const html = await page.text()
     const id = parseDouyinId(page.url) || parseDouyinId(html) || 'douyin'
+    // Douyin image posts include `aweme_images` in the share page. Their MP4
+    // is often just the slideshow soundtrack, so consult the image-aware
+    // keyed resolver before accepting that MP4 as a normal video.
+    if (isDouyinImagePage(html)) {
+      const gallery = await resolveIfphp(sourceUrl, 'douyin')
+      if (gallery?.images?.length) {
+        return {
+          ...gallery,
+          thumbnail: gallery.images[0]?.thumbnail || gallery.thumbnail,
+          downloadUrl: '',
+          isPhotoCarousel: false,
+        }
+      }
+    }
     const urls = absoluteMediaUrls(html)
     const video = urls.find((url) => /(?:\.mp4|playwm|play_addr|playApi)/i.test(url))
     if (video) {
