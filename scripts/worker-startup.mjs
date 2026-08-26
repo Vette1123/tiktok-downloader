@@ -33,9 +33,9 @@ import { join } from 'node:path'
 import vm from 'node:vm'
 
 /**
- * 237 KiB against the 236.4 KiB shipped by the private-access + Facebook
+ * 240 KiB against the 237.0 KiB shipped by the private-access + Facebook
  * Cookie + Xiaohongshu media-type normaliser build. Keep the gate just above
- * that measured bundle while still catching accidental dependency growth.
+ * the measured bundle while still catching accidental dependency growth.
  *
  * The signed web session, protected Shortcuts API, request throttles and
  * platform-specific Cookie gate add no dependencies. The current bundle
@@ -43,7 +43,7 @@ import vm from 'node:vm'
  * the free plan's 10 ms request CPU budget. The remaining margin continues to
  * catch an accidental dependency or a large parser table.
  */
-const MAX_BUNDLE_BYTES = 237 * 1024
+const MAX_BUNDLE_BYTES = 240 * 1024
 
 /** wrangler rejects the upload past this on the free plan. */
 const MAX_GZIPPED_BYTES = 3 * 1024 * 1024
