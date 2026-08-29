@@ -41,6 +41,12 @@ fixed. At ~1.2 requests a minute almost every request is a cold one, so p50
 free plan's 10 ms, and this account has been observed serving 22 ms without a
 kill.
 
+**StartupBase.** A second listing, filled to 100% of the checklist at
+`startupbase.io/submissions/social-media-downloader` and left unsubmitted for
+the same reason. Their AI assistant scrapes the site and prefills the form; what
+it wrote for the tagline was the product name plus a restatement of it, so it
+was replaced with the 60-character line from the launch kit.
+
 ## Mistakes
 
 - **Measured the part I could see and assumed it was the whole.**
@@ -57,6 +63,14 @@ kill.
   native picker blocks the renderer — `Page.captureScreenshot` timed out after
   30 s. Escape recovered it. `file_upload` against the input's ref is the way
   in, and the tool's own description says so.
+- **Assumed a filled field is a saved field.** StartupBase's first-comment
+  textarea has no Save button of its own — it is React state that the
+  `Schedule Your Launch` submit reads. A reload emptied it. On any multi-step
+  form, reload once before calling a step done, and if a field does not survive
+  it, write the copy somewhere the owner can paste it.
+- **Uploaded two files at once and got `Something went wrong. Please, try
+  again later.`** One at a time worked. A batch upload failing says nothing
+  about the files.
 - **Screenshots lag a render behind.** A dropdown was read as showing
   "Messaging / Social Media / Design Tools" while it actually held the results
   for "video", and a tag was picked from the stale list. Two screenshots in a
@@ -78,6 +92,7 @@ kill.
 - Production CPU on this Worker is isolate creation. Bundle bytes move a
   fraction of it; measure in production before claiming a saving.
 - Long text into a browser field goes through `form_input`, never `type`.
-- Never click a file input. Upload through its ref.
+- Never click a file input. Upload through its ref, one file per call.
+- A field is saved when it survives a reload, not when it looks filled.
 - A launch date, a public review and a badge claim belong to the account
   owner. Fill the form; leave the claims.

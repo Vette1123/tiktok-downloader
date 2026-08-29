@@ -57,6 +57,28 @@ Cloudflare Worker. The source is MIT-licensed and the extraction chain falls
 back across several providers, so a download keeps working when any one of them
 goes down.
 
+**First comment** (Product Hunt, StartupBase — the maker comment under the launch).
+I built this because every downloader I tried wanted an install, an account, or
+three ad redirects before it would give me a file I was allowed to keep anyway.
+
+This one is a web page. Paste a link from TikTok, X, Instagram, Facebook,
+YouTube, Pinterest, Reddit, Threads, Snapchat, Twitch or Vimeo — or any other
+site — and it detects the platform, resolves what that public post publishes,
+checks the stream actually plays before offering it, and hands you the file: an
+HD MP4, an MP3 extracted from it, single images from a carousel, or the whole
+carousel as a ZIP.
+
+It only reaches what a logged-out visitor can already see. No sign-up, no ads,
+no tracking cookies, no limits. It installs as a PWA, so you can share straight
+from the TikTok, Instagram or YouTube app.
+
+Stack: Next.js 16, React 19, static export plus a small Cloudflare Worker.
+MIT-licensed, and the extraction chain falls back across several providers so a
+download keeps working when any one of them goes down:
+https://github.com/Vette1123/social-media-downloader
+
+Happy to answer anything about the architecture or the fallback chain.
+
 **Categories / tags.** utilities · multimedia · productivity · open source ·
 privacy · PWA · developer tools
 
@@ -120,10 +142,13 @@ rewrite — check it against the rule at the top of this file first.
 
 | Where | State |
 | --- | --- |
+| **Google Search Console** | Done 2026-08-29 by the owner. `https://www.socialdownloader.space/sitemap.xml` submitted and read the same day: Success, 16 discovered pages, 0 videos. Watch Coverage from here — the point of the submission is that Googlebot was hitting the site 5 times a day against ~800 page views. |
 | **AlternativeTo** | Submitted. Listing plus six alternatives (Cobalt Tools, yt-dlp, NewPipe, youtube-dl, Seal, 4k Video Downloader) are in the review queue — the site says that can take months unless the $5 priority review is paid. Nothing to do until it is approved; the listing is not public and should not be shared yet. |
 | **GitHub topics + description** | Done. See the section above. |
 | **Uneed** | Blocked, not refused. The account is signed in and already has one product queued (Masareef, unscheduled), and the free plan allows one queued launch at a time. Either schedule or remove that one, or take Uneed Pro, before this can be submitted. |
 | **Product Hunt** | Draft created, not scheduled: https://www.producthunt.com/products/social-media-downloader — name, tagline, the ~300-char description, site + repo links, open-source flag, X account, three launch tags (Open Source, Social Media, Video), four gallery images, thumbnail, Free pricing, bootstrapped, and the first comment are all filled. Scheduling the launch date is yours: a launch is one shot, and the day it goes live decides how much of the day the post gets. Shoutouts and the solo-maker checkbox were left for you as well — both are claims made in your name. |
+| **StartupBase** | Filled, not submitted: https://startupbase.io/submissions/social-media-downloader — checklist reads 100% complete. Name, the 60-char tagline, site + repo links, X handle, the long description (1081/1250), tags (Social Media, Open Source, Content Creation), logo, two screenshots, maker and Free pricing are all saved. Demo video, promo code and location left empty on purpose. Submitting is yours: **Schedule Your Launch** is the only button on the last step, and it is what publishes into the queue. |
+| **StartupBase first comment** | Not saved on the page — the Launch Checklist textarea is React state only, and a reload empties it. Paste the copy below into it at the moment you schedule, or the launch goes out without it. |
 | **Peerlist** | Not attempted — the domain is outside what this browser session may reach. |
 
 The alternatives on AlternativeTo were picked to keep the association clean:
