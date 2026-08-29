@@ -290,7 +290,12 @@ function buildChecks() {
       name: `404 ${pathname}`,
       request: { pathname },
       check: async (response, body) => {
-        if (response.status !== 404) return `expected 404, got ${response.status}`
+        // A WAF rule now answers the scanner paths at the edge (see
+        // WAF_RULES in cf-setup.mjs), which is cheaper still than the asset
+        // router — the request never reaches the zone's own store. Both
+        // answers are correct here; only a 200 or a 5xx would not be.
+        if (response.status === 403) return null
+        if (response.status !== 404) return `expected 403 or 404, got ${response.status}`
         const type = response.headers.get('content-type') ?? ''
         if (!type.includes('text/html')) return `expected the 404 page, got "${type}"`
         const cacheControl = response.headers.get('cache-control') ?? ''
