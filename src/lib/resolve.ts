@@ -98,9 +98,10 @@ export async function resolve(
     // late is still the better one (its CDN URL streams to the visitor directly).
     //
     // The loser is cancelled rather than abandoned. An abandoned fetch is not a
-    // free one: it holds a connection open until the Worker finishes writing a
-    // body nobody will read, and the caller's own `opts.signal` never reached
-    // it, so a cancelled paste kept resolving server-side.
+    // free one: it holds a connection open until the Worker has finished
+    // writing a body nobody will read. The controller stands in for the
+    // caller's `opts.signal` and follows it, so a cancelled paste still
+    // cancels — this only adds a second reason to stop.
     const abandon = new AbortController()
     opts.signal?.addEventListener('abort', () => abandon.abort(), { once: true })
     const server = fromServer(abandon.signal)

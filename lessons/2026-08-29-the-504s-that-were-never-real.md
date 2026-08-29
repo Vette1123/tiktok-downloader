@@ -29,9 +29,10 @@ Three things were actually fixed:
   the server in parallel for a TikTok link and takes the first answer — but it
   raced the raw server promise, so a server *network failure* settled the race
   and was thrown at the caller while a perfectly good browser answer was still
-  in flight. It also never passed the caller's `AbortSignal` to the losing
-  request, so a cancelled paste kept a connection open until the Worker
-  finished writing a body nobody would read.
+  in flight. The loser was also left running: the browser answer won and the
+  server request stayed open until the Worker had finished writing a body
+  nobody would read. It is now cancelled through a controller that also
+  follows the caller's own signal.
 - **The Meta login wall ate the shortcode.** A logged-out fetch of an
   `instagram.com/share/…` link — the shape the mobile app's Copy link produces
   — ends at `/accounts/login/?next=%2Freel%2FABC%2F`. The redirect follower
@@ -88,7 +89,7 @@ Three things were actually fixed:
   Worker, so a cache lookup that finds nothing is logged as a gateway timeout.
 - `Promise.race` over a rejectable promise makes a failure win. Race for the
   first *answer* — map failure to null and let the other side finish.
-- Every fetch a component starts on behalf of a caller takes the caller's
-  `AbortSignal`, including the one it started as a hedge.
+- A hedge cancels its loser. Winning the race is not the end of the request
+  the race abandoned.
 - Upstream health lives in the edge log, per host. Look there before writing a
   probe.
