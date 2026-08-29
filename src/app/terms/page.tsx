@@ -4,7 +4,7 @@ import { SiteFooter } from '@/components/SiteFooter'
 import { siteConfig } from '@/config/site'
 
 export const metadata: Metadata = {
-  title: 'Terms of Service',
+  title: 'Terms of Service — Social Media Downloader',
   description: `The terms for using ${siteConfig.name}: as-is service, your responsibility for content rights, and what supporting the project does and does not buy.`,
   alternates: { canonical: '/terms' },
 }

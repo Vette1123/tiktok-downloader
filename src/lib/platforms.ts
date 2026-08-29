@@ -52,7 +52,7 @@ export const platforms: Platform[] = [
     brandLabel: 'Any video downloader',
     metaTitle: 'Any Video Downloader — Paste Any Link, Save HD MP4 & MP3',
     metaDescription:
-      'Paste a link from any website and download the video in HD, extract MP3 audio, or save embedded media — free, no login, no app install. TikTok, X, Instagram, YouTube and everything else.',
+      'Paste a link from any website and save the video in HD, extract MP3 audio, or grab embedded media — free, no login, nothing to install.',
     h1: 'Any Video Downloader — Paste Any Link',
     tagline:
       'One paste box for every site: resolve the video, the audio, or the images from any public link.',

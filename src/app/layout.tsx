@@ -15,7 +15,11 @@ const geistSans = Geist({
   preload: true,
 })
 
-const title = `${siteConfig.name} — ${siteConfig.tagline}`
+// The <title> is its own string rather than name + tagline: together those
+// ran to 106 characters, so a result showed neither of them whole. The
+// tagline is unchanged in the description and the OG tags, where nothing
+// is clipped at 60.
+const title = `${siteConfig.name} — Save Any Public Video in HD`
 
 // Runs synchronously in <head>, before paint. Flags low-power devices and writes
 // a .low-power class to <html> so CSS can swap to the cheap variant with no
@@ -68,7 +72,14 @@ export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.url),
   title: {
     default: title,
-    template: `%s — ${siteConfig.name}`,
+    // No brand suffix. Every page title below was written to fit the ~60
+    // characters a result actually shows, and a `%s — Social Media
+    // Downloader` template put all thirteen of them between 78 and 88
+    // characters — so the part that had been measured to fit was the part
+    // that got cut. The site name is not lost by dropping it: Google takes
+    // it from the WebSite/Organization JSON-LD in structuredData.ts and
+    // prints it above the title in its own right.
+    template: `%s`,
   },
   description: siteConfig.description,
   applicationName: siteConfig.name,

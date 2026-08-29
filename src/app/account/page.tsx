@@ -4,7 +4,7 @@ import { AccountPanel } from '@/components/AccountPanel'
 import { SiteFooter } from '@/components/SiteFooter'
 
 export const metadata: Metadata = {
-  title: 'Account',
+  title: 'Your Account — Social Media Downloader',
   robots: { index: false },
 }
 

@@ -8,9 +8,9 @@ import { siteConfig } from '@/config/site'
 import { SUPPORT_LIFETIME, SUPPORT_MEMBERSHIP, SUPPORT_PRICES } from '@/config/support'
 
 export const metadata: Metadata = {
-  title: 'Support this project',
+  title: 'Support Social Media Downloader',
   description:
-    'This downloader is free and stays free. Support it for $5 a month or $99 once — supporters get the batch queue, playlist import, subtitle downloads, ZIP bundling, priority resolve and an ad-free site, switched on automatically.',
+    'This downloader is free and stays free. Supporters also get the batch queue, playlist import, subtitle downloads, ZIP bundling and priority resolve.',
   alternates: { canonical: '/pro' },
 }
 

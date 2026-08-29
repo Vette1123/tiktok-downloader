@@ -4,7 +4,7 @@ import { SiteFooter } from '@/components/SiteFooter'
 import { siteConfig } from '@/config/site'
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy',
+  title: 'Privacy Policy — Social Media Downloader',
   description: `How ${siteConfig.name} handles your data: anonymous by default, a Google sign-in and nothing else for Pro, no download logs, no cross-site tracking.`,
   alternates: { canonical: '/privacy' },
 }
