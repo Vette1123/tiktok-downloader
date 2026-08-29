@@ -87,6 +87,10 @@ privacy · PWA · developer tools
 - Per-platform cards: `https://www.socialdownloader.space/<slug>/opengraph-image`
 - Phone screenshot 720x1280: `https://www.socialdownloader.space/screenshots/narrow`
 - Icons: `/icons/192`, `/icons/512`, `/icons/maskable`, `/icons/apple`
+  — these are generated routes, and a plain `curl` gets a Cloudflare challenge back (403,
+  `Cf-Mitigated: challenge`, `Content-Type: text/html`), which reads like a broken route but
+  is not. To get a file to upload, run a build and take `out/icons/512` — the built PNGs are
+  extensionless, so copy one to `icon-512.png` before a directory will accept it.
 - Repo social preview: `docs/social-preview.png`
 
 ## Where to submit, in the order worth doing it
@@ -147,9 +151,19 @@ rewrite — check it against the rule at the top of this file first.
 | **GitHub topics + description** | Done. See the section above. |
 | **Uneed** | Blocked, not refused. The account is signed in and already has one product queued (Masareef, unscheduled), and the free plan allows one queued launch at a time. Either schedule or remove that one, or take Uneed Pro, before this can be submitted. |
 | **Product Hunt** | Draft created, not scheduled: https://www.producthunt.com/products/social-media-downloader — name, tagline, the ~300-char description, site + repo links, open-source flag, X account, three launch tags (Open Source, Social Media, Video), four gallery images, thumbnail, Free pricing, bootstrapped, and the first comment are all filled. Scheduling the launch date is yours: a launch is one shot, and the day it goes live decides how much of the day the post gets. Shoutouts and the solo-maker checkbox were left for you as well — both are claims made in your name. |
-| **StartupBase** | Filled, not submitted: https://startupbase.io/submissions/social-media-downloader — checklist reads 100% complete. Name, the 60-char tagline, site + repo links, X handle, the long description (1081/1250), tags (Social Media, Open Source, Content Creation), logo, two screenshots, maker and Free pricing are all saved. Demo video, promo code and location left empty on purpose. Submitting is yours: **Schedule Your Launch** is the only button on the last step, and it is what publishes into the queue. |
+| **StartupBase** | Filled, not submitted: https://startupbase.io/submissions/social-media-downloader — checklist reads 100% complete. Name, the 60-char tagline, site + repo links, X handle, the long description (1081/1250), tags (Social Media, Open Source, Content Creation), logo, two screenshots, maker and Free pricing are all saved. Demo video, promo code and location left empty on purpose. Submitting is yours: **Schedule Your Launch** is the only button on the last step, and it is what publishes into the queue. The free launch is already queued behind ~1,458 others (roughly four to five weeks) and requires their badge on our site; the ways past that are $39 / $99 / $299, all refused. |
 | **StartupBase first comment** | Not saved on the page — the Launch Checklist textarea is React state only, and a reload empties it. Paste the copy below into it at the moment you schedule, or the launch goes out without it. |
 | **Peerlist** | Not attempted — the domain is outside what this browser session may reach. |
+| **Hacker News** | Live: https://news.ycombinator.com/item?id=49489963 — "Show HN: A downloader for public social posts, no sign-up and no ads", plus the maker comment (what it does, the architecture, and the 360p YouTube ceiling stated up front). Posted on a Saturday, which is the weakest slot of the week; if it gets no traction, HN allows one repost of a story nobody saw, so keep the option. |
+| **Reddit** | Posted and removed. r/SideProject (https://redd.it/1w1ngah) and r/coolgithubprojects (https://redd.it/1w1nkwg) both came back `removed_by_category: "reddit"` — Reddit's own sitewide spam filter, not the subreddit mods. u/vetteop is seven years old but has 5 link karma and 0 comment karma, and that is under the filter's bar for link posts. Nothing else was posted: more submissions from a filtered account make the signal worse, not better. To unblock, either build ordinary comment karma first, or message each subreddit's mods and ask them to approve the post — both are yours to do, since they are messages sent in your name. |
+| **SaaSHub** | Submitted on the free tier (the $75 Priority+ review was refused) and now complete: https://www.saashub.com/manage/social-media-downloader — logo, one screenshot, the long description, release date 2025-06, Open Source = Yes with the repo URL, categories and six competitors. Status is "Pending approval", which they say takes up to 32 days. |
+| **Indie Hackers** | Posting is blocked — the editor answers "your account cannot create posts yet", which is their new-account gate. The Products DB entry was created instead and is complete: https://www.indiehackers.com/product/social-media-downloader — logo, tagline, the "why I built it" text, site link, start date, Free / bootstrapped / side project / solo founder / no employees, and the Open Source, Social Media, Video and Utilities tags. Two of those (solo founder, side project) are claims in your name; change them on the edit page if they are wrong. |
+| **OpenAlternative** | Rejected automatically: "This tool doesn't meet our submission requirements and can't be listed." No retry with reworded copy — rewording to beat a filter is the kind of thing that gets a domain flagged. |
+| **DevHunt** | Skipped on their own rules: the directory is for developer-facing tools, and this is not one. |
+| **Microlaunch** | Paid only now — the submit path redirects to /premium#pricing. |
+| **awesome-nextjs** | PR open: https://github.com/unicodeveloper/awesome-nextjs/pull/575 (Apps section). |
+| **awesome-cloudflare** | PR open: https://github.com/zhuima/awesome-cloudflare/pull/216 (Others / 其他, both the Chinese and English READMEs). |
+| **awesome-selfhosted** | Ineligible, not rejected. They require a tagged release older than four months, and the repo has no tags at all; they also disqualify software that depends on a specific cloud provider, and the extraction Worker is Cloudflare-bound. |
 
 The alternatives on AlternativeTo were picked to keep the association clean:
 open-source and mainstream tools only. Entries the site itself flags for
