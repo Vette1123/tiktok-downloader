@@ -61,7 +61,14 @@ export async function resolve(
   const wantQuality = opts.quality ?? 'hd'
   const wantFormat = opts.format ?? 'auto'
 
-  const fromServer = () => resolveOnServer(url, wantType, wantQuality, wantFormat, opts)
+  const fromServer = (signal?: AbortSignal) =>
+    resolveOnServer(
+      url,
+      wantType,
+      wantQuality,
+      wantFormat,
+      signal ? { ...opts, signal } : opts,
+    )
 
   // TikTok resolves ~25x faster straight from the browser, and costs us nothing
   // at all when it works — see lib/tikwmClient.
@@ -74,7 +81,13 @@ export async function resolve(
   // first is the answer. In the common case tikwm is quick, wins, and no server
   // request is ever made.
   if (wantFormat !== 'audio' && detectPlatform(url) === 'tiktok') {
-    const local = resolveTikTokInBrowser(url, wantQuality).catch(() => null)
+    // Widened to the shared result type on purpose: tikwm's own type narrows
+    // `success` to `true`, and the two resolvers have to be interchangeable
+    // below for either to win the race.
+    const local: Promise<ResolveResult | null> = resolveTikTokInBrowser(
+      url,
+      wantQuality,
+    ).catch(() => null)
 
     // Answered inside the hedge window: nothing else is ever sent.
     const early = await Promise.race([local, after(HEDGE_AFTER_MS)])
@@ -83,8 +96,34 @@ export async function resolve(
     // The browser attempt has either missed or is still queueing. Ask the server
     // as well and take whichever finishes first — a browser answer that arrives
     // late is still the better one (its CDN URL streams to the visitor directly).
-    const server = fromServer()
-    return Promise.race([local.then((answer) => answer ?? server), server])
+    //
+    // The loser is cancelled rather than abandoned. An abandoned fetch is not a
+    // free one: it holds a connection open until the Worker finishes writing a
+    // body nobody will read, and the caller's own `opts.signal` never reached
+    // it, so a cancelled paste kept resolving server-side.
+    const abandon = new AbortController()
+    opts.signal?.addEventListener('abort', () => abandon.abort(), { once: true })
+    const server = fromServer(abandon.signal)
+
+    // A server *failure* must not settle the race — tikwm may still be about to
+    // answer, and racing the raw promise handed a network error to the caller
+    // while a perfectly good browser answer was in flight. Null means "this one
+    // has nothing", and the race waits for the other side.
+    const serverOrNull: Promise<ResolveResult | null> = server.catch(() => null)
+    const localFirst: Promise<ResolveResult | null> = local.then(
+      (answer) => answer ?? serverOrNull,
+    )
+    const serverFirst: Promise<ResolveResult | null> = serverOrNull.then(
+      (answer) => answer ?? local,
+    )
+    const winner = await Promise.race([localFirst, serverFirst])
+    if (winner) {
+      abandon.abort()
+      return winner
+    }
+    // Both came back empty: re-await the server so its rejection is what the
+    // caller sees, rather than a silent undefined.
+    return server
   }
 
   return fromServer()

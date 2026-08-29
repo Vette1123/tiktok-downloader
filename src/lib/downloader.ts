@@ -26,6 +26,7 @@ import {
   parseInstagramShortcode,
   parseInstagramStory,
   parseYouTubeId,
+  unwrapLoginWall,
   type SupportedPlatform,
 } from './validator'
 import { htmlScrapingAvailable, nativeMediaAvailable } from './nativeMedia'
@@ -2869,7 +2870,11 @@ export class Downloader {
         },
         timeout: 12000,
       })
-      return response.request?.res?.responseUrl || url
+      // Unwrapped, not merely returned: a logged-out share link ends at the
+      // login wall, and the canonical post is in its `next` parameter. Without
+      // this the shortcode is lost and every extractor that needs one is
+      // skipped. See unwrapLoginWall.
+      return unwrapLoginWall(response.request?.res?.responseUrl || url)
     } catch {
       return url
     }

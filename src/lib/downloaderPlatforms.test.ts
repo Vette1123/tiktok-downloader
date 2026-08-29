@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Downloader, firstResult, parseTwitchClipSlug } from './downloader'
-import { detectPlatform } from './validator'
+import { detectPlatform, unwrapLoginWall } from './validator'
 
 /**
  * The platforms that have no bespoke extractor upstream of them and used to be
@@ -353,6 +353,43 @@ describe('the Facebook short-link resolver', () => {
     expect((init.headers as Record<string, string>)['User-Agent']).toContain(
       'Chrome',
     )
+  })
+})
+
+/**
+ * A share link resolved logged-out ends at Meta's login wall, so the redirect
+ * follower's answer was the wall rather than the post — losing the shortcode
+ * every Instagram extractor keys on and leaving Cobalt as the only path.
+ */
+describe('the Meta login wall', () => {
+  it('returns the post the wall was hiding', () => {
+    expect(
+      unwrapLoginWall(
+        'https://www.instagram.com/accounts/login/?next=%2Freel%2FDaBcDeFgHiJ%2F',
+      ),
+    ).toBe('https://www.instagram.com/reel/DaBcDeFgHiJ/')
+  })
+
+  it('accepts an absolute next on the same host', () => {
+    expect(
+      unwrapLoginWall(
+        'https://www.facebook.com/login/?next=https%3A%2F%2Fwww.facebook.com%2Freel%2F123',
+      ),
+    ).toBe('https://www.facebook.com/reel/123')
+  })
+
+  it('refuses a next pointing somewhere else, which is fetched if returned', () => {
+    const offsite =
+      'https://www.instagram.com/accounts/login/?next=https%3A%2F%2Fevil.example%2Fx'
+    expect(unwrapLoginWall(offsite)).toBe(offsite)
+  })
+
+  it.each([
+    'https://www.instagram.com/reel/DaBcDeFgHiJ/',
+    'https://www.instagram.com/accounts/login/',
+    'not a url at all',
+  ])('leaves %s alone', (url) => {
+    expect(unwrapLoginWall(url)).toBe(url)
   })
 })
 

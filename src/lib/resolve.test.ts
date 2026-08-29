@@ -75,6 +75,43 @@ describe('resolving a TikTok link', () => {
     expect(result.metadata?.title).toBe('from-server')
   })
 
+  it('keeps a late browser answer when the server request fails', async () => {
+    // Racing the raw server promise meant a network error settled the race and
+    // was thrown at the caller, discarding the browser answer still in flight.
+    browserResolve.mockReturnValue(
+      new Promise((r) => setTimeout(() => r(answer('from-browser')), 750)),
+    )
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('network down')
+      }),
+    )
+
+    const result = await resolve(TIKTOK)
+
+    expect(result.metadata?.title).toBe('from-browser')
+  })
+
+  it('cancels the server request the browser beat', async () => {
+    browserResolve.mockReturnValue(
+      new Promise((r) => setTimeout(() => r(answer('from-browser')), 750)),
+    )
+    let signal: AbortSignal | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        signal = init.signal ?? undefined
+        return never
+      }),
+    )
+
+    const result = await resolve(TIKTOK)
+
+    expect(result.metadata?.title).toBe('from-browser')
+    expect(signal?.aborted).toBe(true)
+  })
+
   it('leaves audio mode on the server path, which tikwm cannot serve', async () => {
     stubServer(0)
     await resolve(TIKTOK, { format: 'audio' })

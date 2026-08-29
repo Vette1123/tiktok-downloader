@@ -189,6 +189,42 @@ export function parseInstagramShortcode(url: string): string | null {
 }
 
 /**
+ * The post a Meta login wall was standing in front of.
+ *
+ * Following an Instagram share link logged-out ends at
+ * `https://www.instagram.com/accounts/login/?next=%2Freel%2FABC%2F`, so the
+ * redirect follower's "final URL" is the wall. The shortcode is gone with it,
+ * which skipped both the embed extractor and the media API and left Cobalt as
+ * the only path — for the one link shape the mobile app's Copy link produces.
+ * `next` still carries the real path, and reading it costs nothing.
+ *
+ * Facebook writes the same wall at `/login/` with an absolute `next`, so both
+ * shapes are accepted. Anything that is not a login wall comes back unchanged.
+ */
+export function unwrapLoginWall(finalUrl: string): string {
+  let parsed: URL
+  try {
+    parsed = new URL(finalUrl)
+  } catch {
+    return finalUrl
+  }
+  if (!/^\/(?:accounts\/)?login\/?$/.test(parsed.pathname)) return finalUrl
+
+  const next = parsed.searchParams.get('next')
+  if (!next) return finalUrl
+  if (next.startsWith('/')) return `${parsed.origin}${next}`
+  // An absolute `next` must stay on the host that issued the wall — a
+  // redirect parameter is attacker-controlled on any other site, and this
+  // value is fetched.
+  try {
+    const absolute = new URL(next)
+    return absolute.origin === parsed.origin ? absolute.toString() : finalUrl
+  } catch {
+    return finalUrl
+  }
+}
+
+/**
  * Recognise an Instagram story or highlight URL and pull out what we need to
  * fetch it. Returns null for ordinary post/reel URLs.
  *   /stories/<username>/<storyPk>/        → { username, storyPk }

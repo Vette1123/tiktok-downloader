@@ -135,6 +135,14 @@ function verifySitemapRoutes(files) {
     '/404.html',
     '/manifest.json',
     '/llms.txt',
+    // Android's GoogleAssociationService fetches this for every installed PWA
+    // — 24 requests from 13 addresses in a day, all answered 404 because the
+    // file did not exist. It holds `[]`: a valid, empty Digital Asset Links
+    // statement list, which claims exactly what a 404 claimed (this site
+    // vouches for no app) while being an answer rather than an error. It is
+    // asserted here because it lives in `public/.well-known/`, and a build
+    // step that skipped dot-directories would drop it without a word.
+    '/.well-known/assetlinks.json',
   ]
   const absent = required.filter((r) => !present.has(r))
   if (absent.length > 0) fail(`missing required file(s): ${absent.join(', ')}`)
