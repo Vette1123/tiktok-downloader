@@ -6,7 +6,7 @@
  * pressed it.
  */
 
-import { requireDb, type WorkerEnv } from '../apiRoutes'
+import { requireDb, type WorkerEnv } from '../workerEnv'
 import { loadSession, sessionCookieOf } from '../auth/session'
 import { billingFailure as portalFailure } from './clickResponse'
 import { creemApi, creemHeaders } from './creem'

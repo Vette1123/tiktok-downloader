@@ -8,7 +8,7 @@
  */
 
 import type { D1Database } from '@cloudflare/workers-types'
-import { requireDb, type WorkerEnv } from '../apiRoutes'
+import { requireDb, type WorkerEnv } from '../workerEnv'
 import type { WaitUntilContext } from '../edgeCache'
 import { ACCESS_TOKEN_TTL_MS, signToken } from '../proToken'
 import { hasGrant, isEntitled, isProAt } from '../billing/entitlement'

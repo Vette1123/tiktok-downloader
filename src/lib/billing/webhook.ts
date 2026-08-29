@@ -17,7 +17,7 @@
  */
 
 import type { D1Database } from '@cloudflare/workers-types'
-import { requireDb, type WorkerEnv } from '../apiRoutes'
+import { requireDb, type WorkerEnv } from '../workerEnv'
 import { isProAt, type BillingRow } from './entitlement'
 import { MAX_WEBHOOK_BYTES, readBounded, verifyWebhookSignature } from './hmacWebhook'
 

@@ -48,7 +48,7 @@
 
 import type { D1Database } from '@cloudflare/workers-types'
 import { SUPPORT_LIFETIME, SUPPORT_MEMBERSHIP } from '../../config/support'
-import { requireDb, type WorkerEnv } from '../apiRoutes'
+import { requireDb, type WorkerEnv } from '../workerEnv'
 import { withGrant, withoutGrant } from './entitlement'
 import { MAX_WEBHOOK_BYTES, readBounded, verifyWebhookSignature } from './hmacWebhook'
 

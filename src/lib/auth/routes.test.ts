@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { WorkerEnv } from '../apiRoutes'
+import type { WorkerEnv } from '../workerEnv'
 import { handleAccount, handleAuthCallback, packAuthState, unpackAuthState } from './routes'
 import type { UserRow } from './session'
 

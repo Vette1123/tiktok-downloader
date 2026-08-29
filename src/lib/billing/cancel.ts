@@ -19,7 +19,7 @@
  * `/api/auth/logout`.
  */
 
-import { requireDb, type WorkerEnv } from '../apiRoutes'
+import { requireDb, type WorkerEnv } from '../workerEnv'
 import { loadSession, sessionCookieOf } from '../auth/session'
 import { creemApi, creemHeaders } from './creem'
 import { paidThrough } from './entitlement'

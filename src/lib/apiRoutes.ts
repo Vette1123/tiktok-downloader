@@ -50,49 +50,19 @@ import {
   handleRefresh,
 } from './auth/routes'
 
-// A scoped `import type`, not the ambient global from `wrangler types`.
-//
-// `pnpm cf-typegen` writes a git-ignored cloudflare-env.d.ts that redeclares
-// the whole workerd runtime, including a `Body.json()` that resolves to
-// `unknown` rather than `any` — which puts 26 type errors into files that have
-// nothing to do with D1. CI never runs cf-typegen, so committing code that
-// depends on those globals builds locally and fails in the pipeline.
-//
-// Importing the one type we actually need keeps the build identical in both
-// places. It is erased at compile time, so it adds nothing to the Worker
-// bundle and nothing to any request path.
-import type { D1Database } from '@cloudflare/workers-types'
-
-/**
- * D1 and any other binding live on the Worker's `env`, which is only available
- * to the Cloudflare entrypoint. The Next App Router wrappers under src/app/api
- * call these same functions with no `env`, so a handler that needs a binding
- * must degrade rather than throw — see `requireDb`.
- */
-export interface WorkerEnv {
-  DB?: D1Database
-}
+// requireDb and WorkerEnv live in their own leaf module. Importing them from
+// here would put apiRoutes back in an import cycle with auth/routes and the
+// billing handlers, which esbuild answers by wrapping ~28 KiB of the bundle in
+// init closures that V8 then compiles during evaluation instead of at parse —
+// 1.8 ms of isolate startup, on a Worker where nearly every request starts an
+// isolate. See the header of src/lib/workerEnv.ts.
+import type { WorkerEnv } from './workerEnv'
 
 type Handler = (
   request: Request,
   ctx?: WaitUntilContext,
   env?: WorkerEnv,
 ) => Promise<Response> | Response
-
-/**
- * The 503 a binding-backed route answers when it is running somewhere without
- * that binding — `next dev`, or a misconfigured deployment. Mirrors the shape
- * `nativeMediaUnavailable` uses for the same class of "not available here".
- */
-export function requireDb(env?: WorkerEnv): D1Database | Response {
-  if (!env?.DB) {
-    return Response.json(
-      { success: false, error: 'Accounts are not configured on this deployment.' },
-      { status: 503 },
-    )
-  }
-  return env.DB
-}
 
 /**
  * A resolve served from cache. `X-Cache` distinguishes the two tiers so the
