@@ -123,7 +123,7 @@ rewrite — check it against the rule at the top of this file first.
 | **AlternativeTo** | Submitted. Listing plus six alternatives (Cobalt Tools, yt-dlp, NewPipe, youtube-dl, Seal, 4k Video Downloader) are in the review queue — the site says that can take months unless the $5 priority review is paid. Nothing to do until it is approved; the listing is not public and should not be shared yet. |
 | **GitHub topics + description** | Done. See the section above. |
 | **Uneed** | Blocked, not refused. The account is signed in and already has one product queued (Masareef, unscheduled), and the free plan allows one queued launch at a time. Either schedule or remove that one, or take Uneed Pro, before this can be submitted. |
-| **Product Hunt** | Blocked. Not signed in, and signing in is yours to do. A Product Hunt launch is also one shot and date-scheduled, so it is worth doing deliberately rather than on the day the account is created. |
+| **Product Hunt** | Draft created, not scheduled: https://www.producthunt.com/products/social-media-downloader — name, tagline, the ~300-char description, site + repo links, open-source flag, X account, three launch tags (Open Source, Social Media, Video), four gallery images, thumbnail, Free pricing, bootstrapped, and the first comment are all filled. Scheduling the launch date is yours: a launch is one shot, and the day it goes live decides how much of the day the post gets. Shoutouts and the solo-maker checkbox were left for you as well — both are claims made in your name. |
 | **Peerlist** | Not attempted — the domain is outside what this browser session may reach. |
 
 The alternatives on AlternativeTo were picked to keep the association clean:
