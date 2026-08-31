@@ -924,6 +924,33 @@ const HEALTH_MUST_PASS = [
   /bmc-https-robot|creem/i,
 ]
 
+/**
+ * Every browser user agent is mostly the same forty characters of history, and
+ * the one token that identifies the client is buried in the middle of them.
+ * Cutting the string to fit a terminal keeps the boilerplate and drops the
+ * identity: `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like
+ * Gecko) HeadlessChrome/151.0.0.0 Safari/537.36` was read here as an ordinary
+ * desktop Chrome for a whole session, and `HeadlessChrome` is the entire
+ * reason the rule fired on it.
+ *
+ * So the boilerplate goes first and the remainder is elided from the middle,
+ * because the platform is at the front and the client at the tail.
+ */
+const UA_BOILERPLATE = [
+  /^Mozilla\/5\.0 /,
+  / AppleWebKit\/[\d.]+ \(KHTML, like Gecko\)/,
+  / Safari\/[\d.]+$/,
+  / Version\/[\d.]+/,
+]
+
+function shortAgent(agent, width = 64) {
+  let short = agent
+  for (const pattern of UA_BOILERPLATE) short = short.replace(pattern, '')
+  short = short.trim() || agent
+  if (short.length <= width) return short
+  return `${short.slice(0, width - 29)}…${short.slice(-28)}`
+}
+
 const STOPPED_ACTIONS = new Set(['block', 'managed_challenge', 'challenge', 'jschallenge', 'drop'])
 
 /**
@@ -1006,7 +1033,7 @@ async function stepHealth(ctx) {
   for (const group of stopped) {
     const line =
       `${String(group.count).padStart(4)}  ${group.action.padEnd(18)} ${group.source.padEnd(15)} ` +
-      `${group.ips.size} IP${group.ips.size === 1 ? ' ' : 's'}  ${group.agent.slice(0, 52)}  ` +
+      `${group.ips.size} IP${group.ips.size === 1 ? ' ' : 's'}  ${shortAgent(group.agent).padEnd(64)}  ` +
       C.dim([...group.paths].slice(0, 2).join(' '))
     const shouldPass = HEALTH_MUST_PASS.some((pattern) => pattern.test(group.agent))
 
