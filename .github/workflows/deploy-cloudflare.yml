@@ -15,6 +15,12 @@ concurrency:
   group: cloudflare-deploy-${{ github.ref }}
   cancel-in-progress: false
 
+# Read-only by default. The release job below raises its own scope to
+# contents:write, so the deploy job — which runs build scripts off the
+# lockfile — never holds a token that can write to the repo.
+permissions:
+  contents: read
+
 env:
   # youtube-dl-exec's preinstall hard-fails when it can't find a Python
   # interpreter. The binary is aliased away in the Worker bundle and never runs
@@ -87,3 +93,51 @@ jobs:
       - name: Ping IndexNow
         if: github.event_name != 'pull_request'
         run: node scripts/indexnow.mjs --force
+
+  # A public, dated record of what each deploy carried. The repo is public and
+  # the site has no version number, so without this the only way to see what a
+  # deploy changed is the commit log.
+  #
+  # Its own job for one reason: publishing needs contents:write, and widening
+  # the deploy job would hand that token to every build script it runs off the
+  # lockfile. `needs: deploy` means a release only ever describes something
+  # that actually reached production.
+  release:
+    needs: deploy
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Tags and full history: the notes are the commits since the previous
+          # `v*` tag, and the default shallow clone has neither.
+          fetch-depth: 0
+          # `gh release create` authenticates with GH_TOKEN and creates the tag
+          # through the API, so nothing here pushes over git.
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Build release notes
+        id: notes
+        run: |
+          node scripts/release-notes.mjs > release-notes.md
+          cat release-notes.md
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+
+      # Skipped when the push carried nothing but docs, tests, tooling or
+      # refactors — those are counted in the notes of the next release that has
+      # something to say, rather than getting one of their own.
+      - name: Publish release
+        if: steps.notes.outputs.has_visible == 'true'
+        run: |
+          gh release create "$TAG" --title "$TAG" --notes-file release-notes.md --target "$GITHUB_SHA"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.notes.outputs.tag }}
