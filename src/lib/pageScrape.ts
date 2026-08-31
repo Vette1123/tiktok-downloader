@@ -27,6 +27,7 @@ import {
   pageTitle,
   scriptContaining,
 } from './htmlExtract'
+import { freeRelaysUsable } from './nativeMedia'
 
 /**
  * How much of the page is pulled off the wire at all. `readCappedText` stops
@@ -219,8 +220,13 @@ function corsProxyUrl(target: string): RelayAttempt {
  */
 export async function fetchThroughRelay(target: string): Promise<string | null> {
   const configured = unlockerUrl(target)
-  const attempts = [readerUrl(target), archiveUrl(target), corsProxyUrl(target)]
+  // Empty on Cloudflare: all three free relays refuse our egress there, so the
+  // only thing they buy is three timeouts. See freeRelaysUsable().
+  const attempts = freeRelaysUsable()
+    ? [readerUrl(target), archiveUrl(target), corsProxyUrl(target)]
+    : []
   if (configured) attempts.push({ url: configured })
+  if (attempts.length === 0) return null
 
   for (const attempt of attempts) {
     const html = await relay(attempt)
