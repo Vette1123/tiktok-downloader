@@ -9,6 +9,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![PWA](https://img.shields.io/badge/PWA-installable-5A0FC8?logo=pwa&logoColor=white)](https://web.dev/progressive-web-apps/)
+[![Release](https://img.shields.io/github/v/release/Vette1123/social-media-downloader?label=release&color=F38020&logo=cloudflare&logoColor=white)](../../releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy_Me_A_Coffee-support-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/vetteotp)
 
@@ -507,9 +508,11 @@ does answer, it tunnels the media, which streams from any IP.
 
 ## Deployment
 
-The project deploys to [Vercel](https://vercel.com/new) with no configuration. It runs on any Node.js host that supports Next.js 16 (Node 20+, ideally 24 LTS).
+Production runs on **Cloudflare Workers**. `pnpm cf:build` exports the whole site to `out/`, wrangler uploads that as Workers Static Assets, and `cloudflare/worker.js` answers only `/api/*` — a page view matches an asset before the Worker is invoked, so it costs no CPU and nothing against the free plan's request cap.
 
-`@vercel/og` requires the edge runtime; the OG and Twitter card routes are already configured for it. For the most reliable extraction in production, set `COBALT_API_URL` to a self-hosted Cobalt instance.
+A push to `main` deploys ([`.github/workflows/deploy-cloudflare.yml`](.github/workflows/deploy-cloudflare.yml)). The same run checks the bundle against the upload limit and the isolate startup budget (`pnpm cf:startup`), pings IndexNow with the deployed sitemap, and publishes a dated [release](../../releases) listing what that deploy carried. The Cloudflare-side setup — D1, migrations, secrets, WAF — is in [Getting started](#getting-started).
+
+It also runs on any Node.js host that supports Next.js 16 (Node 20+, ideally 24 LTS): the App Router files under `src/app/api/` wrap the same handlers the Worker calls, so nothing here is Cloudflare-only except the deploy itself. For the most reliable extraction in production, set `COBALT_API_URL` to a self-hosted Cobalt instance.
 
 ## Legal
 

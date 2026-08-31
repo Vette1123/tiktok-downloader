@@ -2,17 +2,18 @@
 
 How the self-hosted media resolver is deployed, wired, and kept healthy. Nothing
 secret lives here — only env-var **names** and procedure. Real values (tokens,
-proxy creds, cookies) live only in the host/Vercel env, never in the repo.
+proxy creds, cookies) live only in the resolver host's env and the Worker's
+secrets, never in the repo.
 
 ## Architecture at a glance
 
 ```
-browser ──▶ Vercel app ──▶ (public Cobalt, then) self-hosted resolver ──▶ source
+browser ──▶ the Worker ──▶ (public Cobalt, then) self-hosted resolver ──▶ source
    ▲                              │  writes live URL
    │                              ▼
    └───────── media stream ◀── resolver /t  (streams DIRECT from CDN)
 
-discovery:  resolver ──SET live URL──▶ Upstash Redis ──GET──▶ Vercel app
+discovery:  resolver ──SET live URL──▶ Upstash Redis ──GET──▶ the Worker
 ```
 
 - The app tries the public Cobalt instance first, then any configured
@@ -107,8 +108,10 @@ Set on the **resolver host** (Back4app):
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | shared store for self-registration |
 | `REGISTRY_KEY` | optional; discovery key name (default `resolver_url`) |
 
-Set on **the app** (Cloudflare Worker secrets — `pnpm cf:setup secrets`, or
-`wrangler secret put`; the app no longer runs on Vercel):
+Set on **the app**, as Cloudflare Worker secrets. Name the keys —
+`pnpm cf:setup secrets COBALT_API_URL` — because a bare `secrets` pushes
+everything in `.env`, including `PRO_TOKEN_SECRET`, which re-signs every session
+and logs every user out. `wrangler secret put <KEY>` does one key too:
 
 | Var | Purpose |
 |-----|---------|

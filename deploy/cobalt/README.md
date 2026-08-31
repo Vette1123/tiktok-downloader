@@ -1,7 +1,7 @@
 # Self-hosted cobalt (TikTok fallback)
 
 A private [cobalt](https://github.com/imputnet/cobalt) API instance that extracts
-and **tunnels** media. The Vercel app calls it server-side; because cobalt
+and **tunnels** media. The site calls it server-side; because cobalt
 tunnels the bytes through its own server, the URLs it returns play from any IP
 (which is why this fixes TikTok where tikwm/datacenter extraction fails).
 
@@ -64,7 +64,7 @@ curl https://socialdownloader-cobalt.fly.dev/
 
 ## Point the app at your instance
 
-Set this in **Vercel** (Project → Settings → Environment Variables), then redeploy:
+Set it as a Worker secret — `pnpm cf:setup secrets COBALT_API_URL`, or `wrangler secret put COBALT_API_URL`. Secrets apply to the next request; no redeploy needed:
 
 ```
 COBALT_API_URL = https://<your-service>.onrender.com/    # or your .fly.dev URL
@@ -80,7 +80,7 @@ can put the same line in `.env`, which is the repo's single env file.
   404/403 — which looks exactly like the "Preview unavailable" bug.
 - **Locking it down (optional):** the instance is open by default. To restrict
   it to this app, enable cobalt API-key auth (`API_AUTH_REQUIRED=1` + a keys
-  file) and set `COBALT_API_KEY` in Vercel — the app already forwards it as an
+  file) and set `COBALT_API_KEY` as a Worker secret — the app already forwards it as an
   `Authorization: Api-Key <key>` header when present.
 - **YouTube** is intentionally out of scope — it bot-blocks datacenter IPs and
   needs a residential IP or session cookies.

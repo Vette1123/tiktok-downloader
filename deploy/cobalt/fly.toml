@@ -1,5 +1,5 @@
 # Fly.io config for a private cobalt API instance (media extractor/tunnel).
-# This powers TikTok (and later IG/Twitter/FB) extraction for the Vercel app.
+# This powers TikTok (and later IG/Twitter/FB) extraction for the site.
 #
 # IMPORTANT: pick a unique app name below, then set API_URL to match the
 # resulting public URL — `https://<app>.fly.dev/` — or tunnels won't work.

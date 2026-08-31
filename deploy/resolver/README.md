@@ -40,7 +40,7 @@ this path, so once this is deployed and wired, those links resolve on the live
 
 ## Wire it to the app
 
-On the Vercel project → **Settings → Environment Variables**:
+On the app, as Worker secrets (`pnpm cf:setup secrets <KEY>`, or `wrangler secret put <KEY>`):
 
 - `COBALT_API_URL` = the Space URL from step 4 (e.g.
   `https://<user>-media-resolver.hf.space`).
@@ -49,7 +49,7 @@ On the Vercel project → **Settings → Environment Variables**:
 - If you set `RESOLVER_API_KEY` on the Space, also set `COBALT_API_KEY` to the
   same value here.
 
-Redeploy the Vercel app. Paste a link on the site — it resolves through the
+Secrets apply to the next request, so there is nothing to redeploy. Paste a link on the site — it resolves through the
 resolver.
 
 ## Auto-discovery (hosts with rotating / temporary URLs)
@@ -63,7 +63,7 @@ free key/value store, and let the app read it back:
    **REST URL** and **REST TOKEN**.
 2. On **this service** (the resolver host), set:
    - `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`
-3. On the **Vercel app**, set the same two vars (identical values).
+3. On the **app**, set the same two secrets (identical values).
 4. Point the keep-warm cron (below) at `/health`. Each ping re-announces the
    current URL (and refreshes its 15-min TTL); the app discovers it before its
    fallback list, so a rotated URL heals with zero manual updates.

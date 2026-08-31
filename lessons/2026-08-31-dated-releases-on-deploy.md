@@ -1,4 +1,4 @@
-# Dated releases on deploy, ported from the sibling repo
+# Dated releases on deploy, and the audit that followed
 
 **Date:** 2026-08-31
 **Area:** `.github/workflows/deploy-cloudflare.yml`, `scripts/release-notes.mjs`
@@ -59,3 +59,49 @@ the first release will carry, so the format was reviewed before it was public.
 - Job-level `permissions:` over workflow-level whenever one job needs write.
 - Release notes read by scope, not by commit type — `**resolve** — …` is what a
   reader scans for; `fix:` is for the machine.
+
+## The audit that followed
+
+`pnpm cf:health` was read after the release shipped, and its output was
+misread — which turned out to be the report's fault, not the reader's.
+
+**The challenges that looked like users were headless browsers.** Four rows,
+14 events, four IPs, `/api/download` — reported as
+`Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (`, which is what a desktop
+Chrome looks like. The full string ends `HeadlessChrome/151.0.0.0`, and the
+report cut the line at 52 characters — one character before the only token that
+mattered. Every browser user agent opens with the same forty characters of
+history, so a plain cut is guaranteed to keep the part that says nothing.
+
+`shortAgent()` in `scripts/cf-setup.mjs` now strips the boilerplate
+(`Mozilla/5.0`, the AppleWebKit/KHTML clause, the trailing `Safari/…`) and
+elides what is left from the middle. The same rows now read
+`(X11; Linux x86_64) HeadlessChrome/151.0.0.0`. No WAF rule changed: every
+challenge in the window was a scripted client, exactly what the rule is for.
+
+**The remaining 21 challenges are empty-UA requests** from Cloudflare and Google
+egress IPs, 19 of them to `/api/download`. Nothing here fetches our own origin
+server-side (`src/lib/resolve.ts` calls `/api/download` from the browser, where
+a UA is always sent), so these are somebody else's script. Left challenged.
+
+**`@vercel/og` was an unused dependency.** The OG, Twitter-card and icon routes
+all import `next/og`, which ships inside Next. Nothing in the repo imported
+`@vercel/og`; `pnpm cf:build` is identical without it.
+
+**The README told contributors to deploy to Vercel.** Production has been on
+Cloudflare Workers for weeks — the tech-stack table two hundred lines above the
+Deployment section already said so. `deploy/cobalt/README.md`,
+`deploy/resolver/README.md`, `deploy/resolver/OPERATIONS.md`, `render.yaml` and
+`deploy/cobalt/fly.toml` all still pointed at a Vercel dashboard for env vars
+too, and now name the Worker secret commands instead — with the keys named,
+because a bare `pnpm cf:setup secrets` pushes `PRO_TOKEN_SECRET` and logs every
+user out.
+
+## Rules (from the audit)
+
+- A report that truncates its evidence will be believed. If a field is cut to
+  fit a terminal, cut the boring end, not the identifying one.
+- Grep for a dependency's import before assuming the package.json entry means
+  it is used. `next/og` and `@vercel/og` are different packages.
+- Hosting facts rot in the least-read half of a README first. When the platform
+  changes, grep the whole repo for the old one — including YAML and Dockerfiles.

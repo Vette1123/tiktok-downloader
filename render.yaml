@@ -13,7 +13,8 @@ services:
       - key: RESOLVER_SECRET
         generateValue: true
       # Optional: require callers to send `Authorization: Api-Key <value>`.
-      # If you set this, also set COBALT_API_KEY to the same value on Vercel.
+      # If you set this, also set COBALT_API_KEY to the same value on the app
+      # (`wrangler secret put COBALT_API_KEY`).
       - key: RESOLVER_API_KEY
         sync: false
       # Optional: cookies.txt contents for links behind a login / anti-bot check.
