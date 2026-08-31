@@ -620,24 +620,111 @@ function buildChecks() {
     nativeMediaGuard('api/youtube', { pathname: '/api/youtube?id=dQw4w9WgXcQ' }),
   ]
 
+  checks.push(...PLATFORM_PROBES.map(platformProbeCheck))
+
   return checks
+}
+
+/**
+ * One real, public post per platform, resolved end to end.
+ *
+ * This is the only thing in the repo that notices an extractor rotting. Every
+ * other test asserts against a fixture, which keeps passing forever after the
+ * site it was captured from changes its HTML — that is exactly how the
+ * 2026-08-13 sweep found every generic platform already dead, with a green
+ * test suite. A platform can only be proven working by resolving something
+ * from it today.
+ *
+ * Rules for this list:
+ *
+ * - Every URL is verified working before it is added. A guessed one produces a
+ *   red run that means nothing.
+ * - Prefer an account that does not delete: an agency, a brand, a public
+ *   figure whose archive is part of the point. A deleted post is a false
+ *   alarm, and a monitor that cries wolf gets muted, which is worse than not
+ *   having one.
+ * - When a probe does go red, check the URL in a browser BEFORE touching the
+ *   extractor. "The post is gone" and "the extractor is broken" look identical
+ *   from here.
+ *
+ * These run on every deploy as advisories and once a day as hard failures —
+ * see THIRD_PARTY_IS_ADVISORY and .github/workflows/platform-monitor.yml.
+ */
+const PLATFORM_PROBES = [
+  // Vimeo has its own extractor rather than going through the fallback chain.
+  { platform: 'vimeo', url: 'https://vimeo.com/76979871' },
+  // Reddit's own video host, which serves DASH rather than a plain file.
+  {
+    platform: 'reddit',
+    url: 'https://www.reddit.com/r/oddlysatisfying/comments/1vhp8n5/taking_a_walk_in_the_rain/',
+  },
+  // An image pin: proves the images[] path, which no video probe covers.
+  { platform: 'pinterest', url: 'https://www.pinterest.com/pin/214343263495052387/' },
+  // The logged-out Instagram wall is the thing most likely to close. This is a
+  // carousel on an account that will outlive the site.
+  { platform: 'instagram', url: 'https://www.instagram.com/p/CmUv48DLvxd/' },
+  { platform: 'facebook', url: 'https://www.facebook.com/reel/1536569814605331/' },
+  { platform: 'twitter', url: 'https://x.com/NASA/status/2094078415376658588' },
+]
+
+/**
+ * A probe is not "success: true".
+ *
+ * An extractor that has lost its media path still answers 200 with a title
+ * scraped from the error page, and a sweep that only reads `success` scores
+ * that as a working platform — the mistake the 2026-08-13 lesson is named
+ * after. So this asserts the platform it was routed to, a title, and at least
+ * one thing a visitor could actually save.
+ */
+function platformProbeCheck(probe) {
+  return {
+    name: `platform ${probe.platform} resolves a live public post`,
+    thirdParty: true,
+    request: {
+      pathname: '/api/download',
+      method: 'POST',
+      json: { url: probe.url },
+      timeoutMs: 90_000,
+    },
+    check: async (response, body) => {
+      if (response.status !== 200) return `expected 200, got ${response.status}`
+      const payload = JSON.parse(new TextDecoder().decode(body))
+      if (!payload.success) return `success=false: ${payload.error ?? 'no error given'}`
+      const meta = payload.metadata ?? {}
+      if (meta.platform !== probe.platform) {
+        return `routed to ${meta.platform ?? 'no platform'}, expected ${probe.platform}`
+      }
+      if (!meta.title) return 'success with no title — the shape of a scraped error page'
+      const media =
+        payload.downloadUrl || payload.audioUrl || meta.embedUrl || (meta.images ?? []).length
+      if (!media) return 'success with nothing to download: no downloadUrl, embedUrl or images'
+      return null
+    },
+  }
 }
 
 /**
  * Whether a failed `thirdParty` check counts as a failure.
  *
- * Two checks assert that YouTube gave us a real extraction rather than the
- * embed fallback. That is worth asserting — it is the difference between a
- * download and a link to a player — but the verdict belongs to Innertube,
- * which answers a datacenter address differently from a home one and
- * throttles a repeat ask within seconds. In CI, from a shared Azure address,
- * it degraded on pass 2 and failed a deploy that was healthy.
+ * The YouTube checks assert a real extraction rather than the embed fallback,
+ * and the platform probes assert a live post still resolves. Both are worth
+ * asserting — they are the difference between a download and a broken promise
+ * — but their verdict belongs to somebody else's server, which answers a
+ * datacenter address differently from a home one and throttles a repeat ask
+ * within seconds. In CI, from a shared Azure address, YouTube degraded on pass
+ * 2 and failed a deploy that was healthy.
  *
- * So in CI those two are reported and not counted, while everything this repo
- * controls stays a hard failure. Run the script from an ordinary machine to
- * hold YouTube to the full assertion.
+ * So in CI they are reported and not counted, while everything this repo
+ * controls stays a hard failure. Nothing a platform does should be able to
+ * block shipping a fix.
+ *
+ * `SMOKE_STRICT=1` turns them back into hard failures inside CI. That is what
+ * the daily monitor sets: there, an upstream's verdict is the entire point,
+ * and a red run is the only way anyone hears that a platform broke.
+ * Unset outside CI too — run this from an ordinary machine and every check is
+ * already hard.
  */
-const THIRD_PARTY_IS_ADVISORY = Boolean(process.env.CI)
+const THIRD_PARTY_IS_ADVISORY = Boolean(process.env.CI) && !process.env.SMOKE_STRICT
 
 // --- runner ---------------------------------------------------------------
 

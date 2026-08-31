@@ -512,6 +512,12 @@ Production runs on **Cloudflare Workers**. `pnpm cf:build` exports the whole sit
 
 A push to `main` deploys ([`.github/workflows/deploy-cloudflare.yml`](.github/workflows/deploy-cloudflare.yml)). The same run checks the bundle against the upload limit and the isolate startup budget (`pnpm cf:startup`), pings IndexNow with the deployed sitemap, and publishes a dated [release](../../releases) listing what that deploy carried. The Cloudflare-side setup — D1, migrations, secrets, WAF — is in [Getting started](#getting-started).
 
+### Is it still working?
+
+Extractors do not break when this repo changes. They break when a platform changes, on a day nobody deployed. So [`.github/workflows/platform-monitor.yml`](.github/workflows/platform-monitor.yml) resolves one real public post per platform against production every morning and fails the run if one stops working — the same `scripts/cf-smoke.mjs` that runs after each deploy, with `SMOKE_STRICT=1` so a platform's verdict counts. After a deploy those same probes are advisory: an upstream having a bad minute must never block shipping a fix.
+
+Run the whole suite yourself against production with `pnpm cf:smoke`, or against any origin with `pnpm cf:smoke https://example.com`. Every check is a hard failure outside CI.
+
 It also runs on any Node.js host that supports Next.js 16 (Node 20+, ideally 24 LTS): the App Router files under `src/app/api/` wrap the same handlers the Worker calls, so nothing here is Cloudflare-only except the deploy itself. For the most reliable extraction in production, set `COBALT_API_URL` to a self-hosted Cobalt instance.
 
 ## Legal

@@ -1,0 +1,56 @@
+name: Platform monitor
+
+# Extractors do not break when we change something. They break when a platform
+# does, on a day nobody deployed, and the first signal is a user who gives up
+# instead of writing in. Every other test in this repo asserts against a
+# captured fixture, which keeps passing forever after the site it was captured
+# from changes its HTML — that is how the 2026-08-13 sweep found every generic
+# platform already dead with a green suite.
+#
+# So once a day, resolve a real public post per platform against production and
+# fail loudly if one stops working. GitHub emails the owner when a scheduled
+# run fails, which is the whole alerting mechanism and needs no secret.
+on:
+  schedule:
+    # 05:41 UTC daily. Off the hour and off :00/:30 — GitHub queues scheduled
+    # runs, and the popular minutes are the slow ones.
+    - cron: '41 5 * * *'
+  workflow_dispatch:
+    inputs:
+      base:
+        description: 'Origin to probe (defaults to production)'
+        required: false
+
+concurrency:
+  group: platform-monitor
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      # No install: scripts/cf-smoke.mjs has no imports at all.
+      #
+      # SMOKE_STRICT is what separates this from the copy that runs after a
+      # deploy. There, a platform's mood is advisory and must never block
+      # shipping a fix. Here it is the entire question being asked, so every
+      # third-party check is a hard failure.
+      #
+      # One pass, not the default two: the second would be answered by the
+      # 120-second edge cache, so it would assert that the cache works rather
+      # than that the platform does.
+      - name: Resolve a live post on every platform
+        run: node scripts/cf-smoke.mjs --passes 1 ${{ inputs.base }}
+        env:
+          SMOKE_STRICT: '1'
