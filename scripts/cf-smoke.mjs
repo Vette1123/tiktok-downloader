@@ -33,7 +33,17 @@
  * Exits non-zero if any check fails, so it can gate a deploy.
  */
 
-const DEFAULT_BASE = 'https://social-media-downloader.mamamaya1337.workers.dev'
+/**
+ * The canonical origin, because it is the only one that serves the whole app.
+ *
+ * The workers.dev hostname was the default here until it stopped being a
+ * second front door: cloudflare/worker.js now answers everything but
+ * /api/billing/webhook there with a 301 to the canonical origin (see the
+ * comment on WEBHOOK_PATH for why). `redirect: 'follow'` turns a redirected
+ * POST into a GET, so every POST check came back 405 and 14 of them failed
+ * against a deployment that was perfectly healthy.
+ */
+const DEFAULT_BASE = 'https://www.socialdownloader.space'
 
 // Kept in sync with src/lib/platforms.ts by the sitemap check below, which
 // fails if the deployed sitemap and this list disagree.

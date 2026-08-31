@@ -94,6 +94,30 @@ jobs:
         if: github.event_name != 'pull_request'
         run: node scripts/indexnow.mjs --force
 
+  # The deploy is not the verification. This is: 148 assertions against the
+  # live origin — every API route, the static-asset headers that prove pages are
+  # not being served by Worker code, and an explicit look for 1101/1102, the
+  # exception and CPU-limit codes that only appear in production.
+  #
+  # After the deploy rather than before it, because there is nothing to assert
+  # against until the version is live; a failure here is a page, not a gate.
+  # No install: the script has no imports at all.
+  smoke:
+    needs: deploy
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Smoke the deployment
+        run: node scripts/cf-smoke.mjs
+
   # A public, dated record of what each deploy carried. The repo is public and
   # the site has no version number, so without this the only way to see what a
   # deploy changed is the commit log.
