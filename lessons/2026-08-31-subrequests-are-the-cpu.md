@@ -40,6 +40,17 @@ Generic failing resolve, measured after the deploy: **1 subrequest instead of
 is untouched at eight subrequests — each one is a real chance of a result, and
 trimming those would trade a download for a millisecond.
 
+**The second fix, same shape.** `fetchThroughRelay` in `pageScrape.ts` tried
+three free relays — the Jina reader, the Internet Archive, allorigins — before
+the configured unlocker. Every one of them refuses a Cloudflare Worker's
+egress; that was measured on 3 August and written into `nativeMedia.ts`, and
+the relay chain never got the note. Three guaranteed-failing subrequests on
+every bot-walled page. `freeRelaysUsable()` now returns false on
+`DEPLOY_TARGET=cloudflare`, so the Worker either uses a configured unlocker or
+returns null immediately, and a self-hosted Node deployment keeps all four.
+Worst-case chain counts after both fixes: generic 4 → 1, threads 5 → 2,
+snapchat 7 → 4, reddit/pinterest/twitch 8 → 5.
+
 **The smoke test.** `node scripts/cf-smoke.mjs` with no argument failed 14
 checks against a healthy deployment. Its default target was the workers.dev
 hostname, which stopped being a second front door when the Worker began
@@ -65,6 +76,13 @@ job after every deploy.
   differently again on a repeat ask seconds later; CI pass 1 got a real
   extraction and pass 2 did not. The two checks whose verdict belongs to a
   third party are advisory in CI now and hard failures everywhere else.
+- **Broke a deploy with a type error in a test file.** The relay-gate push
+  failed on `TS2493: Tuple type '[]' of length '0' has no element at index
+  '0'` — an untyped `vi.fn` mock parameter in `pageScrape.test.ts`. `pnpm test`
+  had passed: **vitest does not type-check, and `next build` type-checks test
+  files.** Ten minutes of red CI for something `tsc --noEmit` reports in
+  fifteen seconds. There is a `pnpm verify` now (typecheck, lint, test) so
+  there is one command to run instead of three to remember.
 - **Three patch scripts mangled their own escapes** writing template literals
   into `.mjs` files through a heredoc, once silently — a `\n` became a real
   newline inside a template and still worked, which is how it survived review.
@@ -91,3 +109,7 @@ job after every deploy.
   it where someone can act on it.
 - After changing the fallback chain, re-measure in production. Local numbers
   with stubbed I/O measure the stubs.
+- A fallback that is known to fail on this host is not a fallback, it is a
+  2 ms tax. When a measurement retires an upstream, grep for every other caller
+  of it the same day.
+- Run `pnpm verify` before pushing. Tests passing is not types passing.

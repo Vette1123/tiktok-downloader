@@ -529,3 +529,5 @@ MIT — see [LICENSE](LICENSE).
 ## Issues and contributions
 
 Open a ticket on the [Issues](../../issues) page with a description, the URL format you tried, and any error message. Pull requests welcome. If the tool saved you time, a ⭐ goes a long way.
+
+Before opening a pull request, run `pnpm verify` — typecheck, lint and tests in one command. CI does not run those separately: `next build` type-checks the whole project including test files, so a type error in a test fails the deploy rather than the test run.

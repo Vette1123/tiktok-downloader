@@ -60,7 +60,11 @@ jobs:
       # fail where the build would already have failed — it just spent another
       # ~30s doing it. Lint was `continue-on-error: true`, so it gated nothing
       # and only produced output nobody read. Both belong on a developer's
-      # machine before pushing, which is where they now run.
+      # machine before pushing, which is where they now run — `pnpm verify`.
+      #
+      # The corollary worth knowing: the build type-checks *test* files too,
+      # which `pnpm test` does not. A type error in a `.test.ts` fails the
+      # deploy, not the test run. That is why `pnpm verify` starts with tsc.
       # Static export into out/ (pages, images, robots, sitemap) plus the
       # _headers file and the completeness checks in scripts/cf-postbuild.mjs.
       - name: Build static site
