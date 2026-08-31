@@ -77,6 +77,100 @@ function isTransientError(e: unknown): boolean {
   return err instanceof Error && !('response' in (err as object))
 }
 
+
+/**
+ * Hosts the public cobalt instances will actually answer for.
+ *
+ * A public instance replies 400 to anything outside cobalt's service list, and
+ * a refusal costs the same TLS handshake and HTTP exchange as an answer —
+ * three instances deep, each retried twice on a transient failure, all billed
+ * as CPU against a 10 ms budget. Measured in production on 2026-08-31: a
+ * generic page cost 9 ms of CPU and logged three refusals; the same request
+ * with an in-Worker answer costs 1 ms.
+ *
+ * Only the PUBLIC list is gated. A configured `COBALT_API_URL` or a discovered
+ * self-hosted resolver is ours, and deploy/resolver runs yt-dlp, whose list is
+ * far longer than cobalt's — so those are still tried for every URL.
+ *
+ * Bare registrable hosts, matched by suffix, so `www.`, `m.`, `vm.tiktok.com`
+ * and every other subdomain falls out of the same entry.
+ */
+const COBALT_SERVICE_HOSTS = [
+  'bilibili.com',
+  'bilibili.tv',
+  'b23.tv',
+  'bsky.app',
+  'dailymotion.com',
+  'dai.ly',
+  'facebook.com',
+  'fb.watch',
+  'instagram.com',
+  'loom.com',
+  'ok.ru',
+  'pin.it',
+  'redd.it',
+  'reddit.com',
+  'rutube.ru',
+  'snapchat.com',
+  'snd.sc',
+  'soundcloud.com',
+  'streamable.com',
+  'tiktok.com',
+  'tumblr.com',
+  'twitch.tv',
+  'twitter.com',
+  'vimeo.com',
+  'vk.com',
+  'vk.ru',
+  'vkvideo.ru',
+  'x.com',
+  'xhslink.com',
+  'xiaohongshu.com',
+  'youtu.be',
+  'youtube.com',
+]
+
+/** Pinterest ships one domain per country — pinterest.co.uk, .fr, .de, … */
+const PINTEREST_HOST = /(^|\.)pinterest\.[a-z]{2,3}(\.[a-z]{2})?$/i
+
+/** Whether the public cobalt instances serve this URL's host at all. */
+export function publicCobaltServes(url: string): boolean {
+  let hostname: string
+  try {
+    hostname = new URL(url).hostname.toLowerCase()
+  } catch {
+    return false
+  }
+  if (PINTEREST_HOST.test(hostname)) return true
+  return COBALT_SERVICE_HOSTS.some(
+    (host) => hostname === host || hostname.endsWith(`.${host}`),
+  )
+}
+
+/**
+ * How long an instance that failed transiently is left out of the rotation.
+ *
+ * An instance answering 429 or 5xx is very likely still doing it a second
+ * later, and each attempt is retried twice before the loop moves on — three
+ * subrequests spent relearning what the previous request already found out.
+ * Production logged exactly that: `rue-cobalt.xenon.zone` 530 on every resolve
+ * in the window.
+ *
+ * Per isolate, so it dies with the isolate and costs nothing to keep. Five
+ * minutes is long enough to matter under load and short enough that a
+ * recovered instance is back before anyone notices it left.
+ */
+const COBALT_COOLDOWN_MS = 5 * 60_000
+const cobaltCooldown = new Map<string, number>()
+
+/** One key per instance, so a trailing slash does not make two of them. */
+const cobaltKey = (instance: string): string => instance.replace(/\/$/, '')
+
+/** Test seam: the cooldown is module state and outlives a single test. */
+export function resetCobaltCooldown(): void {
+  cobaltCooldown.clear()
+}
+
 /**
  * Referer for the codec probe in `checkVideoCodecCompatible`.
  *
@@ -2389,10 +2483,31 @@ export class Downloader {
     const configured = new Set(
       this.cobaltInstances.map((i) => i.replace(/\/$/, '')),
     )
-    const instances =
+    const all =
       discovered && !configured.has(discovered.replace(/\/$/, ''))
         ? [...this.cobaltInstances, discovered]
         : this.cobaltInstances
+
+    // A public instance refuses a host outside cobalt's service list with a
+    // 400, and that refusal costs the same handshake as an answer. Ours are
+    // generic, so they stay in the list whatever the host is.
+    const publicInstances = new Set(
+      Downloader.publicCobaltInstances.map(cobaltKey),
+    )
+    const eligible = publicCobaltServes(url)
+      ? all
+      : all.filter((instance) => !publicInstances.has(cobaltKey(instance)))
+    if (eligible.length === 0) return null
+
+    // Skip an instance that failed transiently a moment ago — but only while
+    // another one is left to try. If every instance is cooling down, they are
+    // all tried again rather than failing the resolve on the strength of a
+    // memo.
+    const now = Date.now()
+    const ready = eligible.filter(
+      (instance) => (cobaltCooldown.get(cobaltKey(instance)) ?? 0) <= now,
+    )
+    const instances = ready.length > 0 ? ready : eligible
     // Prefer an instance that *tunnels* over one that hands back a raw CDN
     // redirect. Both are usable, but only a tunnel streams from any IP with
     // Content-Disposition set, which lets the browser pull the file straight
@@ -2415,6 +2530,12 @@ export class Downloader {
         }
         return result
       } catch (e) {
+        // Only a transient failure earns a cooldown. A 400 is about the URL,
+        // not the instance, and benching a healthy instance over one
+        // unsupported link would cost the next request its best source.
+        if (isTransientError(e)) {
+          cobaltCooldown.set(cobaltKey(instance), Date.now() + COBALT_COOLDOWN_MS)
+        }
         errors.push(`${instance}: ${e}`)
       }
     }
