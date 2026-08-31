@@ -388,7 +388,7 @@ describe('fetchThroughRelay', () => {
     // ours — the reason for the whole mechanism, and unaffected by the above.
     vi.stubEnv('DEPLOY_TARGET', 'cloudflare')
     vi.stubEnv('SCRAPE_UNLOCKER_URL', 'https://unlock.example/?url={url}')
-    const fetchMock = vi.fn(async () => new Response(REAL_PAGE))
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => new Response(REAL_PAGE))
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(fetchThroughRelay('https://site.example/v')).resolves.toContain('word')

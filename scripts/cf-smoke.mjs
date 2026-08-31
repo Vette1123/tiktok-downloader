@@ -473,11 +473,14 @@ function buildChecks() {
         timeoutMs: 30_000,
       },
       check: async (response, body) => {
-        // The route answers with `{ success: false, error }` and HTTP 500.
-        // The 500 is a pre-existing quirk (422 would describe "this post is
-        // private or unsupported" far better) and is deliberately not asserted
-        // against here — what matters for the Worker is that the failure is a
-        // structured JSON response rather than a crash or a CPU overrun.
+        // 422: the link was understood and nothing resolvable is behind it.
+        // 504 is the other honest answer — an upstream that never replied — so
+        // both pass. A 500 does not: that is now the code for a failure the
+        // route did not recognise, and it stopped being the everyday answer
+        // when resolveFailure started classifying (see src/lib/apiRoutes.ts).
+        if (![422, 504].includes(response.status)) {
+          return `expected 422 (unresolvable) or 504 (upstream timeout), got ${response.status}`
+        }
         const text = new TextDecoder().decode(body)
         let payload
         try {
