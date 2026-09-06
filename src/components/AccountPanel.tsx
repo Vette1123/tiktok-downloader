@@ -15,6 +15,7 @@
  */
 
 import { type ReactNode, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { Surface } from '@/components/Surface'
 import { Avatar, type AvatarIdentity } from '@/components/Avatar'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
@@ -34,10 +35,20 @@ import {
   type Format,
   type Quality,
   persistPrefs,
+  setFilenameTemplate,
   setFormat,
   setQuality,
   usePrefs,
 } from '@/lib/prefs'
+import {
+  DEFAULT_FILENAME_TEMPLATE,
+  FILENAME_TEMPLATE_PRESETS,
+  FILENAME_TOKENS,
+  buildDownloadFilename,
+  isFilenameTemplate,
+  unknownFilenameTokens,
+} from '@/lib/filename'
+import { useTier } from '@/lib/entitlements'
 import { PRO_BENEFITS } from '@/config/pro'
 import { PAST_DUE_GRACE_MS, paidThrough } from '@/lib/billing/entitlement'
 import { formatDate, nowMs, useHydrated, useOnPageVisible } from '@/lib/clientEnv'
@@ -597,6 +608,138 @@ function PreferencesSection() {
   )
 }
 
+/**
+ * The example every filename preview is built from.
+ *
+ * A real-looking post rather than "Title" and "Author": the whole question
+ * someone is answering here is "what will this look like in my folder", and a
+ * placeholder that is shorter and tidier than real data answers it wrongly.
+ * Frozen date so the preview does not tick over while being read.
+ */
+const FILENAME_SAMPLE = {
+  platform: 'instagram',
+  author: 'nasagoddard',
+  title: 'Ancient space rocks, and what they told us',
+  date: new Date(2026, 5, 8, 14, 30, 52),
+} as const
+
+function previewFilename(template: string | undefined, ext = 'mp4'): string {
+  return buildDownloadFilename({ ...FILENAME_SAMPLE, ext, template })
+}
+
+/**
+ * Where a supporter decides how saved files are named.
+ *
+ * Free visitors see the shape they already get and what the extra buys, which
+ * is the point of showing them the card at all — a benefit nobody can see is
+ * not a benefit. Nothing here is disabled-and-teasing: the preview is real
+ * either way, and only the controls that change it are behind the support.
+ */
+function FilenamesSection() {
+  const tier = useTier()
+  const prefs = usePrefs()
+  const isPro = tier === 'pro'
+  const active = prefs.filenameTemplate ?? DEFAULT_FILENAME_TEMPLATE
+
+  const [draft, setDraft] = useState(active)
+  const [touched, setTouched] = useState(false)
+
+  // While untouched, follow the stored value — it can change under us when a
+  // sign-in adopts the account's copy.
+  const shown = touched ? draft : active
+  const unknown = unknownFilenameTokens(shown)
+  const valid = isFilenameTemplate(shown)
+
+  function apply(next: string): void {
+    setTouched(true)
+    setDraft(next)
+    if (!isFilenameTemplate(next)) return
+    // The built-in shape is stored as "no template", so clearing back to the
+    // default leaves nothing behind to migrate later.
+    const value = next.trim() === DEFAULT_FILENAME_TEMPLATE ? undefined : next.trim()
+    setFilenameTemplate(value)
+    void persistPrefs({ ...prefs, filenameTemplate: value })
+  }
+
+  return (
+    <Surface radius='3xl' className='animate-card-enter p-5 sm:p-6'>
+      <div className='flex flex-wrap items-baseline justify-between gap-2'>
+        <h2 className='text-lg font-semibold text-white'>File names</h2>
+        {!isPro && (
+          <span className='rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 text-[11px] font-medium text-cyan-200'>
+            Supporters
+          </span>
+        )}
+      </div>
+      <p className='mt-1 text-sm text-white/55'>
+        {isPro
+          ? 'Every download is named this way. The date leads by default so a folder sorted by name is in the order you saved things.'
+          : 'Downloads are named with the date, the platform, the account and the title. Supporters can change that shape.'}
+      </p>
+
+      <p className='mt-4 overflow-x-auto rounded-lg border border-white/[0.08] bg-black/25 px-3 py-2 font-mono text-xs whitespace-nowrap text-cyan-200/90'>
+        {previewFilename(valid ? shown : undefined)}
+      </p>
+
+      {isPro && (
+        <div className='mt-4 space-y-3'>
+          <div className='flex flex-wrap gap-1.5'>
+            {FILENAME_TEMPLATE_PRESETS.map((preset) => (
+              <button
+                key={preset.template}
+                type='button'
+                onClick={() => apply(preset.template)}
+                aria-pressed={shown === preset.template}
+                className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                  shown === preset.template
+                    ? 'border-cyan-400/60 bg-cyan-400/15 text-cyan-100'
+                    : 'border-white/10 text-white/55 hover:border-white/25 hover:text-white'
+                }`}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+
+          <label className='block'>
+            <span className='sr-only'>Filename template</span>
+            <input
+              type='text'
+              value={shown}
+              spellCheck={false}
+              autoComplete='off'
+              onChange={(e) => apply(e.target.value)}
+              aria-invalid={!valid}
+              className={`w-full rounded-xl border bg-black/25 px-3 py-2 font-mono text-sm text-white outline-none transition-colors ${
+                valid
+                  ? 'border-white/10 focus:border-cyan-400/60'
+                  : 'border-rose-400/50 focus:border-rose-400'
+              }`}
+            />
+          </label>
+
+          <p role='status' className='text-xs text-white/45'>
+            {unknown.length > 0
+              ? `There is no {${unknown[0]}} — use ${FILENAME_TOKENS.map((t) => `{${t}}`).join(', ')}.`
+              : valid
+                ? `Available: ${FILENAME_TOKENS.map((t) => `{${t}}`).join(', ')}. The extension is always added for you.`
+                : 'A template needs at least one placeholder, or every file would be given the same name.'}
+          </p>
+        </div>
+      )}
+
+      {!isPro && (
+        <Link
+          href='/pro'
+          className='mt-4 inline-flex text-sm font-medium text-cyan-300 underline-offset-4 transition-colors hover:text-cyan-200 hover:underline'
+        >
+          See what supporting gets you →
+        </Link>
+      )}
+    </Surface>
+  )
+}
+
 const DELETE_FAILED = 'Could not delete the account. Try again.'
 
 /**
@@ -987,6 +1130,7 @@ export function AccountPanel() {
         <PlanSection plan={plan} entitled={pro} />
       )}
       <PreferencesSection />
+      <FilenamesSection />
       <AccountSection
         identity={{
           // The cache covers all three while the refresh is in flight, so the

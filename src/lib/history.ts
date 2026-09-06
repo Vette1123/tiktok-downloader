@@ -38,6 +38,12 @@ export function loadHistory(): HistoryEntry[] {
     const parsed = JSON.parse(raw) as unknown
     if (!Array.isArray(parsed)) return []
     // Keep only well-shaped entries — tolerate schema drift from older versions.
+    //
+    // Sorted here rather than trusted, because this is the single read path and
+    // the stored array's order is only ever as good as whatever last wrote it:
+    // an older build, a hand-edited export, a partial write. Newest first is
+    // the one thing the Recent list promises, so it is asserted on read instead
+    // of assumed. Thirty entries — the cap — cost nothing to sort.
     return parsed
       .filter(
         (e): e is HistoryEntry =>
@@ -46,6 +52,7 @@ export function loadHistory(): HistoryEntry[] {
           typeof (e as HistoryEntry).url === 'string' &&
           typeof (e as HistoryEntry).ts === 'number',
       )
+      .sort((a, b) => b.ts - a.ts)
       .slice(0, MAX)
   } catch {
     return []

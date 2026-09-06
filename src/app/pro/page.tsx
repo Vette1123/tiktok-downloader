@@ -170,8 +170,10 @@ export default function Support() {
 
           <p className='mt-6 text-sm text-white/60'>
             Every one above is about doing the same work without standing over
-            it — a queue instead of one link at a time, one ZIP instead of
-            twelve files, a playlist instead of twenty pastes. None of them
+            it — a queue instead of one link at a time, a whole run in one
+            archive instead of twenty files, a playlist instead of twenty
+            pastes, and downloads that land named the way you file things. None
+            of them
             reach anything a visitor without them cannot already download, and
             none of them involve this site signing in anywhere on your behalf.
             Everything free today stays free whether anyone supports this or

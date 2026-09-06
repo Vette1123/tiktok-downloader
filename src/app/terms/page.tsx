@@ -115,8 +115,9 @@ export default function Terms() {
               That is a donation, handled entirely by them under their own
               terms: it is one-off, it does not renew, and there is nothing here
               to cancel. As a thank-you we switch some conveniences on for your
-              account &mdash; a batch queue, ZIP bundling, priority resolve, and
-              no sponsor card &mdash; by hand, after you email us.
+              account &mdash; a batch queue, ZIP bundling for a run, priority
+              resolve, custom file names, and no sponsor card &mdash; by hand,
+              after you email us.
             </p>
             <p className='mt-2'>
               Those conveniences are a gift and not a purchased entitlement. We

@@ -64,8 +64,20 @@ export const PRO_BENEFITS: ProBenefit[] = [
     body: 'Your links are asked of our own resolvers first: not rate-limited, not shared with the public internet.',
   },
   {
+    // Deliberately about the BATCH archive, not the carousel one.
+    //
+    // The carousel ZIP checkbox has always been free, and the platform pages,
+    // the FAQ and llms.txt all promise it to everyone. This line used to read
+    // "carousel images and batched audio", half of which was untrue — the
+    // mirror image of the FAQ that promised a free batch queue in
+    // lessons/2026-08-25-pre-push-review.md. What is genuinely behind the
+    // support is the queue's own archive, because the queue is.
     title: 'One-tap ZIP bundles',
-    body: 'Carousel images and batched audio collect into a single archive instead of a dozen separate saves.',
+    body: 'A whole batch run collects into a single archive — twenty links in, one file out — instead of twenty separate saves.',
+  },
+  {
+    title: 'File names your way',
+    body: 'Set the shape once — {date}, {platform}, {author}, {title}, {index} — and every download lands named for the library you keep, on every device you sign in to.',
   },
   {
     title: 'No sponsor card',

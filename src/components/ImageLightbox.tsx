@@ -29,6 +29,8 @@ interface ImageLightboxProps {
   platform?: string
   author?: string
   title?: string
+  /** A supporter’s saved-filename shape, passed down rather than re-derived. */
+  filenameTemplate?: string
 }
 
 // Direction-aware slide variants. `direction` is +1 when paginating forward
@@ -62,6 +64,7 @@ export function ImageLightbox({
   platform,
   author,
   title,
+  filenameTemplate,
 }: ImageLightboxProps) {
   const current = images[activeIndex]
   const hasMultiple = images.length > 1
@@ -158,6 +161,7 @@ export function ImageLightbox({
         ext: isVideo ? 'mp4' : 'jpg',
         index: activeIndex + 1,
         total: images.length,
+        template: filenameTemplate,
       })
       document.body.appendChild(link)
       link.click()

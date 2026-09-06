@@ -70,7 +70,7 @@ import {
   reportProgress,
   subscribeProgress,
 } from '@/lib/downloadProgress'
-import { useProToken } from '@/lib/entitlements'
+import { useFilenameTemplate, useProToken } from '@/lib/entitlements'
 import {
   addHistory,
   clearHistory,
@@ -598,6 +598,8 @@ export function DownloaderApp() {
   // Pro token, sent as X-Pro-Token so the server tries the operator's own
   // resolvers first for a subscriber's request — see lib/entitlements.
   const proToken = useProToken()
+  // A supporter's saved-filename shape, or undefined for the built-in one.
+  const filenameTemplate = useFilenameTemplate()
   // Core-flow copy follows the chosen language (footer picker); deep copy —
   // hints, FAQ, legal — stays English by design. See lib/i18n.ts.
   const t = useT()
@@ -612,6 +614,33 @@ export function DownloaderApp() {
   // to keep the call sites in this file reading the same as before.
   const changeQuality = setQuality
   const changeFormat = setFormat
+
+  /**
+   * The name every file saved from this card gets.
+   *
+   * Seven call sites repeated the same three metadata lookups, differing only
+   * in the extension — so adding a supporter's filename template would have
+   * meant remembering it seven times, and the one that got missed would have
+   * quietly withheld the feature from someone paying for it. One function
+   * knows the shape now; callers name the extension and nothing else.
+   */
+  const nameFile = useCallback(
+    (ext: string, extra?: { index?: number; total?: number }) =>
+      buildDownloadFilename({
+        platform: state.videoMetadata?.platform,
+        author: state.videoMetadata?.author,
+        title: state.videoMetadata?.title,
+        ext,
+        template: filenameTemplate,
+        ...extra,
+      }),
+    [
+      filenameTemplate,
+      state.videoMetadata?.platform,
+      state.videoMetadata?.author,
+      state.videoMetadata?.title,
+    ],
+  )
 
   // Resolve one link against the API. Shared by the single-link flow, batch
   // mode, and the result-card re-pick. `opts` overrides the current format/
@@ -970,12 +999,7 @@ export function DownloaderApp() {
     // download manager takes over instantly.
     const direct = state.videoMetadata?.directVideoUrl
     if (direct) {
-      const filename = buildDownloadFilename({
-        platform: state.videoMetadata?.platform,
-        author: state.videoMetadata?.author,
-        title: state.videoMetadata?.title,
-        ext: 'mp4',
-      })
+      const filename = nameFile('mp4')
       // The instance resolves server-side before the first byte, so nothing
       // moves for a moment after the click. Hold the button in a spinning
       // "preparing" state until the stream starts reporting.
@@ -1034,12 +1058,7 @@ export function DownloaderApp() {
       )
       saveBlob(
         blob,
-        buildDownloadFilename({
-          platform: state.videoMetadata?.platform,
-          author: state.videoMetadata?.author,
-          title: state.videoMetadata?.title,
-          ext: 'mp4',
-        }),
+        nameFile('mp4'),
       )
 
       dispatch({
@@ -1091,12 +1110,7 @@ export function DownloaderApp() {
       )
       saveBlob(
         blob,
-        buildDownloadFilename({
-          platform: state.videoMetadata?.platform,
-          author: state.videoMetadata?.author,
-          title: state.videoMetadata?.title,
-          ext: 'mp4',
-        }),
+        nameFile('mp4'),
       )
 
       dispatch({
@@ -1129,12 +1143,7 @@ export function DownloaderApp() {
     if (direct) {
       // Same as the video path: stream it so the bar is real, and fall back to
       // the browser's download manager when the stream can't be read.
-      const filename = buildDownloadFilename({
-        platform: state.videoMetadata?.platform,
-        author: state.videoMetadata?.author,
-        title: state.videoMetadata?.title,
-        ext: 'mp3',
-      })
+      const filename = nameFile('mp3')
       dispatch({ type: 'SET_DOWNLOADING_AUDIO', payload: true })
       dispatch({ type: 'SET_PROGRESS', payload: null })
       dispatch({ type: 'SET_MESSAGE', payload: t('preparingDownload') })
@@ -1185,12 +1194,7 @@ export function DownloaderApp() {
       )
       saveBlob(
         blob,
-        buildDownloadFilename({
-          platform: state.videoMetadata?.platform,
-          author: state.videoMetadata?.author,
-          title: state.videoMetadata?.title,
-          ext: 'mp3',
-        }),
+        nameFile('mp3'),
       )
 
       dispatch({
@@ -1317,12 +1321,7 @@ export function DownloaderApp() {
 
         const link = document.createElement('a')
         link.href = blobUrl
-        link.download = buildDownloadFilename({
-          platform: state.videoMetadata?.platform,
-          author: state.videoMetadata?.author,
-          title: state.videoMetadata?.title,
-          ext: 'zip',
-        })
+        link.download = nameFile('zip')
         document.body.appendChild(link)
         link.click()
         document.body.removeChild(link)
@@ -1365,17 +1364,13 @@ export function DownloaderApp() {
 
             const link = document.createElement('a')
             link.href = blobUrl
-            link.download = buildDownloadFilename({
-              platform: state.videoMetadata?.platform,
-              author: state.videoMetadata?.author,
-              title: state.videoMetadata?.title,
+            link.download = nameFile(
               // The route already worked out what each entry is; naming a clip
               // `.jpg` here was how a carousel's video reached the disk as a
               // file nothing would play.
-              ext: imageData.ext || 'jpg',
-              index: i + 1,
-              total: totalImages,
-            })
+              imageData.ext || 'jpg',
+              { index: i + 1, total: totalImages },
+            )
             document.body.appendChild(link)
             link.click()
             document.body.removeChild(link)
@@ -1876,8 +1871,9 @@ export function DownloaderApp() {
             lede={
               <>
                 Saved you some time? This site is free to use and not free to
-                run — supporters get the batch queue, ZIP bundles, priority on
-                every link and no sponsor card, switched on automatically.
+                run — supporters get the batch queue, downloads named the way
+                they file things, priority on every link and no sponsor card,
+                switched on automatically.
               </>
             }
           />
@@ -2268,32 +2264,32 @@ export function DownloaderApp() {
                         </div>
 
                         <div className='bg-white/[0.03] border border-white/[0.08] rounded-lg p-3 space-y-3'>
-                          <div className='flex items-center space-x-3'>
-                            <input
-                              type='checkbox'
-                              id='downloadAsZip'
-                              checked={state.downloadImagesAsZip}
-                              onChange={(e) =>
-                                dispatch({
-                                  type: 'SET_DOWNLOAD_IMAGES_AS_ZIP',
-                                  payload: e.target.checked,
-                                })
-                              }
-                              className='w-4 h-4 accent-cyan-400 bg-white/10 border-white/30 rounded focus:ring-cyan-400 focus:ring-2'
-                            />
-                            <label
-                              htmlFor='downloadAsZip'
-                              className='text-white text-sm'
-                            >
-                              Download as ZIP file
-                            </label>
+                            <div className='flex items-center space-x-3'>
+                              <input
+                                type='checkbox'
+                                id='downloadAsZip'
+                                checked={state.downloadImagesAsZip}
+                                onChange={(e) =>
+                                  dispatch({
+                                    type: 'SET_DOWNLOAD_IMAGES_AS_ZIP',
+                                    payload: e.target.checked,
+                                  })
+                                }
+                                className='w-4 h-4 accent-cyan-400 bg-white/10 border-white/30 rounded focus:ring-cyan-400 focus:ring-2'
+                              />
+                              <label
+                                htmlFor='downloadAsZip'
+                                className='text-white text-sm'
+                              >
+                                Download as ZIP file
+                              </label>
+                            </div>
+                            <p className='text-white/60 text-xs'>
+                              {state.downloadImagesAsZip
+                                ? `Selected ${galleryNoun} arrive as one ZIP file`
+                                : `Selected ${galleryNoun} download one by one`}
+                            </p>
                           </div>
-                          <p className='text-white/60 text-xs'>
-                            {state.downloadImagesAsZip
-                              ? `Selected ${galleryNoun} arrive as one ZIP file`
-                              : `Selected ${galleryNoun} download one by one`}
-                          </p>
-                        </div>
 
                         <button
                           onClick={handleImageDownload}
@@ -2566,6 +2562,7 @@ export function DownloaderApp() {
           platform={state.videoMetadata.platform}
           author={state.videoMetadata.author}
           title={state.videoMetadata.title}
+          filenameTemplate={filenameTemplate}
           onClose={() => setLightboxIndex(null)}
           onPrev={() =>
             setLightboxIndex((i) => {

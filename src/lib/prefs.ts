@@ -31,6 +31,7 @@ import {
   mergePrefs,
   normalisePrefs,
 } from './prefsCore'
+import { isFilenameTemplate } from './filename'
 
 export { mergePrefs, normalisePrefs }
 export type { Format, Prefs, Quality }
@@ -38,6 +39,7 @@ export type { Format, Prefs, Quality }
 const QUALITY_KEY = 'smd:quality'
 const FORMAT_KEY = 'smd:format'
 const SUBTITLE_LANG_KEY = 'smd:subtitle-lang'
+const FILENAME_TEMPLATE_KEY = 'smd:filename-template'
 
 let cache: Prefs | null = null
 const listeners = new Set<() => void>()
@@ -47,10 +49,12 @@ function readStored(): Prefs {
     const quality = window.localStorage.getItem(QUALITY_KEY)
     const format = window.localStorage.getItem(FORMAT_KEY)
     const subtitleLang = window.localStorage.getItem(SUBTITLE_LANG_KEY)
+    const filenameTemplate = window.localStorage.getItem(FILENAME_TEMPLATE_KEY)
     return {
       quality: isQuality(quality) ? quality : DEFAULTS.quality,
       format: isFormat(format) ? format : DEFAULTS.format,
       ...(isSubtitleLang(subtitleLang) ? { subtitleLang } : {}),
+      ...(isFilenameTemplate(filenameTemplate) ? { filenameTemplate } : {}),
     }
   } catch {
     // Storage blocked (private mode, cookie policy) — defaults are fine.
@@ -115,6 +119,29 @@ export function setSubtitleLang(lang: string | undefined): void {
   commit({ ...current, subtitleLang: lang })
 }
 
+/**
+ * Set (or clear) the saved-filename shape.
+ *
+ * An invalid template is refused rather than stored — the editor is what tells
+ * somebody why, and a value that reaches here already passed the same check the
+ * filename builder will apply.
+ */
+export function setFilenameTemplate(template: string | undefined): void {
+  const current = getSnapshot()
+  const next =
+    template && isFilenameTemplate(template) ? template.trim() : undefined
+  if (current.filenameTemplate === next) return
+  if (next) write(FILENAME_TEMPLATE_KEY, next)
+  else {
+    try {
+      window.localStorage.removeItem(FILENAME_TEMPLATE_KEY)
+    } catch {
+      // ignore
+    }
+  }
+  commit({ ...current, filenameTemplate: next })
+}
+
 export function usePrefs(): Prefs {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
 }
@@ -136,6 +163,9 @@ export function adoptServerPrefs(raw: unknown): void {
   if (merged.format !== getSnapshot().format) setFormat(merged.format)
   if (merged.subtitleLang !== getSnapshot().subtitleLang) {
     setSubtitleLang(merged.subtitleLang)
+  }
+  if (merged.filenameTemplate !== getSnapshot().filenameTemplate) {
+    setFilenameTemplate(merged.filenameTemplate)
   }
 }
 

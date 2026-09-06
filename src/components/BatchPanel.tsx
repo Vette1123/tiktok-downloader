@@ -19,7 +19,11 @@ import {
 import { buildDownloadFilename } from '@/lib/filename'
 import { saveBlob } from '@/lib/blobSaver'
 import { resolve, type ResolveResult } from '@/lib/resolve'
-import { useProToken, useTier } from '@/lib/entitlements'
+import {
+  useFilenameTemplate,
+  useProToken,
+  useTier,
+} from '@/lib/entitlements'
 import { CheckIcon, SpinnerIcon } from '@/components/icons'
 
 /**
@@ -64,13 +68,17 @@ function triggerTunnelDownload(url: string) {
  * effort — a save failure here doesn't change the item's resolved status, it
  * just means that one video needs a manual re-download.
  */
-async function saveVideoResult(result: ResolveResult): Promise<void> {
+async function saveVideoResult(
+  result: ResolveResult,
+  template?: string,
+): Promise<void> {
   const meta = result.metadata
   const filename = buildDownloadFilename({
     platform: meta?.platform,
     author: meta?.author,
     title: meta?.title,
     ext: 'mp4',
+    template,
   })
   try {
     const direct = meta?.directVideoUrl
@@ -95,7 +103,10 @@ async function saveVideoResult(result: ResolveResult): Promise<void> {
  * 'image'/'audio' and silently skips anything else, so a stray non-zippable
  * item contributes nothing rather than erroring.
  */
-async function buildBatchZip(zipCandidates: BatchItem[]): Promise<Blob> {
+async function buildBatchZip(
+  zipCandidates: BatchItem[],
+  template?: string,
+): Promise<Blob> {
   const { default: JSZip } = await import('jszip')
   const zip = new JSZip()
 
@@ -117,9 +128,13 @@ async function buildBatchZip(zipCandidates: BatchItem[]): Promise<Blob> {
               platform: meta?.platform,
               author: meta?.author,
               title: meta?.title,
-              ext: 'jpg',
+              // A carousel slide can be a clip. Naming one .jpg is how a video
+              // reaches the disk as a file nothing will open — see
+              // lessons/2026-09-06-the-tunnel-that-served-a-jpeg.md.
+              ext: img.kind === 'video' ? 'mp4' : 'jpg',
               index: i + 1,
               total: images.length,
+              template,
             }),
             await response.arrayBuffer(),
           )
@@ -137,6 +152,7 @@ async function buildBatchZip(zipCandidates: BatchItem[]): Promise<Blob> {
               author: meta?.author,
               title: meta?.title,
               ext: 'mp3',
+              template,
             }),
             await response.arrayBuffer(),
           )
@@ -204,6 +220,9 @@ function loadLanes(): number {
 
 export function BatchPanel() {
   const tier = useTier()
+  // Batch is supporters-only, so the template always applies here — but it is
+  // still read through the same hook, which is the one place that decides.
+  const filenameTemplate = useFilenameTemplate()
   const proToken = useProToken()
 
   const [rawInput, setRawInput] = useState(loadBatchDraft)
@@ -272,6 +291,15 @@ export function BatchPanel() {
   // the auto-save below is a side effect).
   const itemsRef = useRef<BatchItem[]>([])
 
+  // `publish` must keep a stable identity — every other callback here depends
+  // on it — so the template is read through a ref rather than captured. That is
+  // also the more correct read: a row that finishes after the shape was edited
+  // should be named the new way, not the way it was when the run started.
+  const templateRef = useRef(filenameTemplate)
+  useEffect(() => {
+    templateRef.current = filenameTemplate
+  }, [filenameTemplate])
+
   const publish = useCallback((nextItems: BatchItem[], merge: boolean) => {
     let next = nextItems
     if (merge) {
@@ -285,7 +313,7 @@ export function BatchPanel() {
       prevStatusRef.current.set(item.url, item.status)
       if (prevStatus !== 'done' && item.status === 'done' && item.result) {
         if (categorizeResult(item.result) === 'video') {
-          void saveVideoResult(item.result)
+          void saveVideoResult(item.result, templateRef.current)
         }
       }
     }
@@ -445,15 +473,22 @@ export function BatchPanel() {
     setIsZipping(true)
     setNote('')
     try {
-      const blob = await buildBatchZip(zipCandidates)
-      saveBlob(blob, buildDownloadFilename({ title: 'batch', ext: 'zip' }))
+      const blob = await buildBatchZip(zipCandidates, filenameTemplate)
+      saveBlob(
+        blob,
+        buildDownloadFilename({
+          title: 'batch',
+          ext: 'zip',
+          template: filenameTemplate,
+        }),
+      )
       setNote(`${zipCandidates.length} photo/audio item(s) saved as a ZIP.`)
     } catch {
       setNote('Could not build the ZIP — try again.')
     } finally {
       setIsZipping(false)
     }
-  }, [isZipping, items])
+  }, [filenameTemplate, isZipping, items])
 
   if (tier !== 'pro') return null
 

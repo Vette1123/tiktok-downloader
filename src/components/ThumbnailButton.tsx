@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { buildDownloadFilename } from '@/lib/filename'
+import { useFilenameTemplate } from '@/lib/entitlements'
 import { saveBlob } from '@/lib/blobSaver'
 import { useT } from '@/lib/i18nStore'
 
@@ -29,6 +30,7 @@ export function ThumbnailButton({
   title?: string
 }) {
   const t = useT()
+  const filenameTemplate = useFilenameTemplate()
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
 
@@ -45,7 +47,11 @@ export function ThumbnailButton({
       const type = response.headers.get('Content-Type') ?? 'image/jpeg'
       saveBlob(
         await response.blob(),
-        buildDownloadFilename({ title, ext: extensionFor(type) }),
+        buildDownloadFilename({
+          title,
+          ext: extensionFor(type),
+          template: filenameTemplate,
+        }),
       )
     } catch {
       setFailed(true)

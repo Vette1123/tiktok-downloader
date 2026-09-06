@@ -15,6 +15,7 @@
 
 import { useEffect } from 'react'
 import { currentAccessToken, ensureFreshToken, useAccount } from './account'
+import { usePrefs } from './prefs'
 
 /**
  * Free on the server and during hydration, so the markup never differs.
@@ -29,6 +30,25 @@ export function useTier(): 'free' | 'pro' {
     ensureFreshToken()
   }, [])
   return account.pro ? 'pro' : 'free'
+}
+
+/**
+ * The saved-filename shape to actually use, or undefined for the built-in one.
+ *
+ * One place decides this, because the alternative is every download call site
+ * remembering to check the tier — and the one that forgot would quietly give
+ * the feature away, or quietly withhold it from someone who supports the
+ * project. Both are worse than a hook.
+ *
+ * Enforced client-side, like the ad-free half of Pro and for the same reason:
+ * a filename costs us nothing, so the honest supporter is the whole audience.
+ * The entitlements that actually cost something (priority resolve, the batch
+ * queue's server work) are checked against a signed token instead.
+ */
+export function useFilenameTemplate(): string | undefined {
+  const tier = useTier()
+  const { filenameTemplate } = usePrefs()
+  return tier === 'pro' ? filenameTemplate : undefined
 }
 
 export function useProToken(): string | null {

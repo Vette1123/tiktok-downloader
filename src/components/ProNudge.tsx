@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { Surface } from '@/components/Surface'
+import { CloseIcon } from '@/components/icons'
 import { useTier } from '@/lib/entitlements'
 import { dismissNudge, useProSignals } from '@/lib/proSignals'
 
@@ -93,9 +94,7 @@ export function ProNudge({
           aria-label='Dismiss'
           className='absolute top-1 right-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/40 transition-colors hover:bg-white/10 hover:text-white/80 sm:static'
         >
-          <span aria-hidden className='text-base leading-none'>
-            ×
-          </span>
+          <CloseIcon className='h-4 w-4' />
         </button>
       )}
     </Surface>

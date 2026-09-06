@@ -9,7 +9,13 @@
  * account request in every isolate — inside a 10 ms CPU budget — to run a
  * twenty-line validator. One implementation, two importers: the client store
  * re-exports these, the server route imports them directly.
+ *
+ * The one import here is `./filename`, which is plain strings and `Date` with
+ * no imports of its own — the template predicate has to be the *same* one the
+ * builder uses, or storage would accept a shape the builder then ignores.
  */
+
+import { isFilenameTemplate } from './filename'
 
 export type Quality = 'hd' | 'sd'
 export type Format = 'video' | 'audio'
@@ -23,6 +29,13 @@ export interface Prefs {
    * their first track — so older stored prefs stay valid untouched.
    */
   subtitleLang?: string
+  /**
+   * How saved files are named, for supporters who set one. Absent means the
+   * built-in dated shape, which is what everyone had before and what a free
+   * visitor keeps. Validated with the same predicate the filename builder uses,
+   * so a template the builder would refuse never reaches storage.
+   */
+  filenameTemplate?: string
 }
 
 /**
@@ -65,10 +78,11 @@ export function normalisePrefs(value: unknown): Prefs | null {
   }
   if (typeof candidate !== 'object' || candidate === null) return null
 
-  const { quality, format, subtitleLang } = candidate as {
+  const { quality, format, subtitleLang, filenameTemplate } = candidate as {
     quality?: unknown
     format?: unknown
     subtitleLang?: unknown
+    filenameTemplate?: unknown
   }
   if (quality !== undefined && !isQuality(quality)) return null
   if (format !== undefined && !isFormat(format)) return null
@@ -80,6 +94,12 @@ export function normalisePrefs(value: unknown): Prefs | null {
   // An absent language is the normal case; a present-but-invalid one is
   // dropped rather than rejected wholesale — it must not poison quality/format.
   if (isSubtitleLang(subtitleLang)) prefs.subtitleLang = subtitleLang
+  // Same rule for the filename shape, and for a stronger reason: this value is
+  // written into a `download` attribute, so an unvalidated one is a path
+  // hazard, not a cosmetic problem.
+  if (isFilenameTemplate(filenameTemplate)) {
+    prefs.filenameTemplate = filenameTemplate.trim()
+  }
   return prefs
 }
 
