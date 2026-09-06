@@ -100,6 +100,22 @@ export default function Privacy() {
           </section>
 
           <section>
+            <h2 className='mb-2 text-lg font-semibold text-white'>Your clipboard</h2>
+            <p>
+              The Paste button reads your clipboard once, when you press it.
+              Supporters can also switch on a setting that reads it when you
+              return to the tab, so a link copied elsewhere resolves by itself.
+              It is off unless you turn it on, your browser asks permission
+              before the first read, and the reading happens in your browser: if
+              the clipboard holds a link, that link is sent to our resolver
+              exactly as though you had pasted it, and if it holds anything else
+              the text is discarded on the spot and never sent anywhere. Nothing
+              is read while the tab is in the background &mdash; browsers do not
+              permit it, and neither would we.
+            </p>
+          </section>
+
+          <section>
             <h2 className='mb-2 text-lg font-semibold text-white'>Contact</h2>
             <p>
               Privacy questions, or a request to delete data we hold, go to{' '}

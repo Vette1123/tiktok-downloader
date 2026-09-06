@@ -41,6 +41,7 @@ const FORMAT_KEY = 'smd:format'
 const SUBTITLE_LANG_KEY = 'smd:subtitle-lang'
 const FILENAME_TEMPLATE_KEY = 'smd:filename-template'
 const AUTO_SAVE_KEY = 'smd:auto-save'
+const CLIPBOARD_WATCH_KEY = 'smd:clipboard-watch'
 
 let cache: Prefs | null = null
 const listeners = new Set<() => void>()
@@ -52,12 +53,14 @@ function readStored(): Prefs {
     const subtitleLang = window.localStorage.getItem(SUBTITLE_LANG_KEY)
     const filenameTemplate = window.localStorage.getItem(FILENAME_TEMPLATE_KEY)
     const autoSave = window.localStorage.getItem(AUTO_SAVE_KEY)
+    const clipboardWatch = window.localStorage.getItem(CLIPBOARD_WATCH_KEY)
     return {
       quality: isQuality(quality) ? quality : DEFAULTS.quality,
       format: isFormat(format) ? format : DEFAULTS.format,
       ...(isSubtitleLang(subtitleLang) ? { subtitleLang } : {}),
       ...(isFilenameTemplate(filenameTemplate) ? { filenameTemplate } : {}),
       ...(autoSave === '1' ? { autoSave: true as const } : {}),
+      ...(clipboardWatch === '1' ? { clipboardWatch: true as const } : {}),
     }
   } catch {
     // Storage blocked (private mode, cookie policy) — defaults are fine.
@@ -134,19 +137,37 @@ export function setSubtitleLang(lang: string | undefined): void {
   commit({ ...current, subtitleLang: lang })
 }
 
+/** The on/off preferences, and the key each one is stored under. */
+const FLAG_KEYS = {
+  autoSave: AUTO_SAVE_KEY,
+  clipboardWatch: CLIPBOARD_WATCH_KEY,
+} as const
+
+type FlagPref = keyof typeof FLAG_KEYS
+
 /**
- * Turn "save it without asking me" on or off.
+ * Turn one on/off preference on or off.
  *
  * Off is stored as an absent key rather than `'false'`, so a visitor who has
  * never touched it and one who turned it back off are the same state — see
- * `normalisePrefs`, which stores only `true` for the same reason.
+ * `normalisePrefs`, which keeps only `true` for the same reason.
  */
-export function setAutoSave(on: boolean): void {
+function setFlag(name: FlagPref, on: boolean): void {
   const current = getSnapshot()
   const next = on || undefined
-  if (current.autoSave === next) return
-  writeOrClear(AUTO_SAVE_KEY, next ? '1' : undefined)
-  commit({ ...current, autoSave: next })
+  if (current[name] === next) return
+  writeOrClear(FLAG_KEYS[name], next ? '1' : undefined)
+  commit({ ...current, [name]: next })
+}
+
+/** Start the download as soon as a link resolves. */
+export function setAutoSave(on: boolean): void {
+  setFlag('autoSave', on)
+}
+
+/** Resolve whatever link is on the clipboard when the tab is focused. */
+export function setClipboardWatch(on: boolean): void {
+  setFlag('clipboardWatch', on)
 }
 
 /**
@@ -192,6 +213,9 @@ export function adoptServerPrefs(raw: unknown): void {
   }
   if (merged.autoSave !== getSnapshot().autoSave) {
     setAutoSave(merged.autoSave === true)
+  }
+  if (merged.clipboardWatch !== getSnapshot().clipboardWatch) {
+    setClipboardWatch(merged.clipboardWatch === true)
   }
 }
 

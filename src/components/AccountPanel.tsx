@@ -36,6 +36,7 @@ import {
   type Quality,
   persistPrefs,
   setAutoSave,
+  setClipboardWatch,
   setFilenameTemplate,
   setFormat,
   setQuality,
@@ -653,24 +654,77 @@ function templateHint(template: string): string {
   return `Available: ${tokenList()}. The extension is always added for you.`
 }
 
+/** One on/off supporter setting, with the line that says what it is doing. */
+function FlagRow({
+  id,
+  label,
+  on,
+  onChange,
+  detail,
+}: {
+  id: string
+  label: string
+  on: boolean
+  onChange: (next: boolean) => void
+  detail: string
+}) {
+  return (
+    <div className='mt-4 first:mt-3'>
+      <div className='flex items-center gap-3'>
+        <input
+          type='checkbox'
+          id={id}
+          checked={on}
+          onChange={(event) => onChange(event.target.checked)}
+          className='h-4 w-4 rounded border-white/30 bg-white/10 accent-cyan-400 focus:ring-2 focus:ring-cyan-400'
+        />
+        <label htmlFor={id} className='text-sm text-white'>
+          {label}
+        </label>
+      </div>
+      <p className='mt-1.5 pl-7 text-xs text-white/45'>{detail}</p>
+    </div>
+  )
+}
+
+/** What the auto-save line says, in each of its two states. */
+function autoSaveDetail(on: boolean): string {
+  if (on) {
+    return 'Paste a link and the file is already saving. Carousels still wait for you to pick.'
+  }
+  return 'Off: a resolved link waits on the card until you tap Download.'
+}
+
+/** What the clipboard-watch line says, in each of its two states. */
+function clipboardWatchDetail(on: boolean): string {
+  if (on) {
+    return 'Copy a link anywhere, switch back to this tab, and it resolves. Your browser will ask permission the first time, and some browsers refuse it outright — the Paste button always works.'
+  }
+  return 'Off: nothing is read from your clipboard unless you press Paste.'
+}
+
 /**
- * "Save it without asking me."
+ * The two settings about how much work a download costs the visitor.
  *
- * Its own section rather than a row inside File names, because it is a
- * different question: that one is what the file is called, this one is whether
- * the visitor has to tap at all. Both are the same kind of benefit though —
- * less standing over it, no wider reach — which is the only kind this list is
- * allowed to hold. See config/pro.ts.
+ * Their own section rather than rows inside File names, because that one
+ * answers what the file is called and these answer whether the visitor has to
+ * do anything at all. Both are the same kind of benefit — less standing over
+ * it, no wider reach — which is the only kind this list is allowed to hold. See
+ * config/pro.ts.
  */
 function AutoSaveSection() {
   const tier = useTier()
   const prefs = usePrefs()
   const isPro = tier === 'pro'
-  const on = prefs.autoSave === true
 
-  function toggle(next: boolean): void {
+  function setAuto(next: boolean): void {
     setAutoSave(next)
     void persistPrefs({ ...prefs, autoSave: next || undefined })
+  }
+
+  function setWatch(next: boolean): void {
+    setClipboardWatch(next)
+    void persistPrefs({ ...prefs, clipboardWatch: next || undefined })
   }
 
   return (
@@ -686,29 +740,27 @@ function AutoSaveSection() {
 
       {isPro ? (
         <>
-          <div className='mt-3 flex items-center gap-3'>
-            <input
-              type='checkbox'
-              id='autoSave'
-              checked={on}
-              onChange={(e) => toggle(e.target.checked)}
-              className='h-4 w-4 rounded border-white/30 bg-white/10 accent-cyan-400 focus:ring-2 focus:ring-cyan-400'
-            />
-            <label htmlFor='autoSave' className='text-sm text-white'>
-              Start the download as soon as a link resolves
-            </label>
-          </div>
-          <p className='mt-2 text-xs text-white/45'>
-            {on
-              ? 'Paste a link and the file is already saving. Carousels still wait for you to pick.'
-              : 'Off: a resolved link waits on the card until you tap Download.'}
-          </p>
+          <FlagRow
+            id='autoSave'
+            label='Start the download as soon as a link resolves'
+            on={prefs.autoSave === true}
+            onChange={setAuto}
+            detail={autoSaveDetail(prefs.autoSave === true)}
+          />
+          <FlagRow
+            id='clipboardWatch'
+            label='Resolve a copied link when I come back to this tab'
+            on={prefs.clipboardWatch === true}
+            onChange={setWatch}
+            detail={clipboardWatchDetail(prefs.clipboardWatch === true)}
+          />
         </>
       ) : (
         <>
           <p className='mt-1 text-sm text-white/55'>
-            Paste a link and let the file save itself, with no second tap.
-            Supporters can switch this on.
+            Let a pasted link save itself with no second tap, and let a link you
+            copied elsewhere resolve the moment you come back to this tab.
+            Supporters can switch both on.
           </p>
           <Link
             href='/pro'

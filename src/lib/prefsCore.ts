@@ -42,6 +42,13 @@ export interface Prefs {
    * what a free visitor keeps.
    */
   autoSave?: boolean
+  /**
+   * Whether returning to the tab resolves whatever link is on the clipboard,
+   * for supporters who turned it on. Absent means off — and it stays off until
+   * somebody deliberately switches it on, because it is the one preference here
+   * that makes the page read something it was not handed.
+   */
+  clipboardWatch?: boolean
 }
 
 /**
@@ -84,14 +91,21 @@ export function normalisePrefs(value: unknown): Prefs | null {
   }
   if (typeof candidate !== 'object' || candidate === null) return null
 
-  const { quality, format, subtitleLang, filenameTemplate, autoSave } =
-    candidate as {
-      quality?: unknown
-      format?: unknown
-      subtitleLang?: unknown
-      filenameTemplate?: unknown
-      autoSave?: unknown
-    }
+  const {
+    quality,
+    format,
+    subtitleLang,
+    filenameTemplate,
+    autoSave,
+    clipboardWatch,
+  } = candidate as {
+    quality?: unknown
+    format?: unknown
+    subtitleLang?: unknown
+    filenameTemplate?: unknown
+    autoSave?: unknown
+    clipboardWatch?: unknown
+  }
   if (quality !== undefined && !isQuality(quality)) return null
   if (format !== undefined && !isFormat(format)) return null
 
@@ -112,6 +126,7 @@ export function normalisePrefs(value: unknown): Prefs | null {
   // same state as never having set it, and leaving the key out keeps the
   // stored object the shape it has always been for everyone who has not.
   if (autoSave === true) prefs.autoSave = true
+  if (clipboardWatch === true) prefs.clipboardWatch = true
   return prefs
 }
 

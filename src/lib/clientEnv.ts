@@ -104,6 +104,26 @@ export function useIsIOSLike(): boolean {
 }
 
 /**
+ * A mouse and a hardware keyboard, rather than a finger.
+ *
+ * The one thing this gates so far is putting focus back in the link field after
+ * a download, which is a courtesy on a laptop and an ambush on a phone: focusing
+ * an input there raises the on-screen keyboard over the result the visitor just
+ * saved. `(hover: hover)` alone would catch a tablet with a trackpad, which is
+ * fine — it has a keyboard too.
+ */
+function detectFinePointer(): boolean {
+  return (
+    window.matchMedia?.('(hover: hover) and (pointer: fine)').matches ?? false
+  )
+}
+
+/** See {@link detectFinePointer}. */
+export function useHasFinePointer(): boolean {
+  return useSyncExternalStore(neverChanges, detectFinePointer, serverFalse)
+}
+
+/**
  * Whether we may offer a PWA install at all: not already installed, and not
  * previously dismissed.
  *

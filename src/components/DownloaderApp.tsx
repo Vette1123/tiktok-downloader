@@ -43,7 +43,7 @@ import { ProNudge } from '@/components/ProNudge'
 import { SUPPORT_PRICES } from '@/config/support'
 import { parseBatchInput } from '@/lib/batchQueue'
 import { recordResolve } from '@/lib/proSignals'
-import { nowMs, useIsIOSLike } from '@/lib/clientEnv'
+import { nowMs, useHasFinePointer, useIsIOSLike } from '@/lib/clientEnv'
 import { setFormat, setQuality, usePrefs } from '@/lib/prefs'
 import { buildDownloadFilename, formatBytes } from '@/lib/filename'
 import { parseYouTubeId } from '@/lib/validator'
@@ -72,6 +72,7 @@ import {
 } from '@/lib/downloadProgress'
 import {
   useAutoSave,
+  useClipboardWatch,
   useFilenameTemplate,
   useProToken,
 } from '@/lib/entitlements'
@@ -88,6 +89,7 @@ import {
 } from '@/lib/history'
 import { saveBlob } from '@/lib/blobSaver'
 import { autoSaveTarget } from '@/lib/autoSave'
+import { clipboardDecision } from '@/lib/clipboardWatch'
 import { carriesText, droppedLink, isEditableTarget } from '@/lib/linkDrop'
 
 // Pull the first http(s) URL out of arbitrary shared text. Android's share sheet
@@ -130,6 +132,15 @@ const MAX_IN_MEMORY_DOWNLOAD_BYTES = 80 * 1024 * 1024
 // minutes that trade is worth it; for a 40-minute one it is not — and a slow
 // public tunnel instance can easily make a long video that.
 const MAX_STREAM_SECONDS = 120
+
+/**
+ * How many refused clipboard reads before the watcher stops asking.
+ *
+ * Firefox refuses `clipboard-read` outright and Safari wants a gesture, so a
+ * rejection is the ordinary case on two engines out of three. Retrying on every
+ * tab focus for the rest of the session would be noise nobody can act on.
+ */
+const CLIPBOARD_DENIAL_LIMIT = 3
 
 // Don't judge the rate off the first few chunks — TLS ramp-up and the
 // instance's own startup make the opening seconds unrepresentative.
@@ -634,6 +645,8 @@ export function DownloaderApp() {
   // a one-line "save to Photos" hint on video results. Set once on mount.
   // Read straight from the browser rather than via an effect — see lib/clientEnv.
   const isIOS = useIsIOSLike()
+  // A laptop, not a phone. Gates focus moves that would raise a keyboard.
+  const finePointer = useHasFinePointer()
   const didInit = useRef(false)
   // Pro token, sent as X-Pro-Token so the server tries the operator's own
   // resolvers first for a subscriber's request — see lib/entitlements.
@@ -1055,6 +1068,112 @@ export function DownloaderApp() {
     return () => document.removeEventListener('paste', onPaste)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  /**
+   * Watch the clipboard: copy a link anywhere, come back, and it is resolving.
+   *
+   * Reads only when the tab is focused, which is not a policy choice — the
+   * Clipboard API rejects otherwise, and a page that could read the clipboard
+   * in the background is a page nobody should leave open. Focus is also exactly
+   * the right moment: it is the instant the visitor comes back from wherever
+   * they copied the link.
+   *
+   * Chrome grants `clipboard-read` for the site once and remembers it; Firefox
+   * refuses it outright, and Safari only allows a read tied to a gesture. So a
+   * rejection is the normal case on two of three engines, and it must cost
+   * nothing: three quiet failures and the watcher stops asking for the rest of
+   * the session. The Paste chip still works everywhere, because a click is the
+   * gesture those engines want.
+   */
+  const clipboardWatch = useClipboardWatch()
+  const lastClipboard = useRef<string | null>(null)
+  const clipboardDenials = useRef(0)
+
+  useEffect(() => {
+    if (!clipboardWatch || !navigator.clipboard?.readText) return
+
+    const check = async () => {
+      if (document.visibilityState !== 'visible') return
+      if (clipboardDenials.current >= CLIPBOARD_DENIAL_LIMIT) return
+      let text: string
+      try {
+        text = await navigator.clipboard.readText()
+      } catch {
+        clipboardDenials.current += 1
+        return
+      }
+      clipboardDenials.current = 0
+      const decision = clipboardDecision({
+        text,
+        lastSeen: lastClipboard.current,
+        currentUrl: state.originalUrl,
+        busy: isResolvingOrDownloading(state),
+      })
+      lastClipboard.current = decision.seen
+      if (decision.resolve) handleProcess(decision.resolve)
+    }
+
+    window.addEventListener('focus', check)
+    document.addEventListener('visibilitychange', check)
+    return () => {
+      window.removeEventListener('focus', check)
+      document.removeEventListener('visibilitychange', check)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clipboardWatch, state])
+
+  /**
+   * Escape starts over: the card clears and the cursor is back in the field.
+   *
+   * The loop this is for is copy, paste, save, copy, paste, save — and between
+   * two of those the previous result is just something to get past. Escape is
+   * the one key nobody has to be told about, and it is already what the
+   * lightbox and the confirm dialog use, so it means the same thing everywhere
+   * on the page. Those two claim it first (they stop propagation), which is
+   * right: the top layer wins.
+   *
+   * Returns whether it did anything, because the field's own handler needs to
+   * know: Escape in a field that still has text should clear the text, and only
+   * an already-empty field falls through to clearing the card.
+   */
+  const clearResult = useCallback((): boolean => {
+    if (!state.originalUrl && !state.message) return false
+    if (isResolvingOrDownloading(state)) return false
+    dispatch({ type: 'RESET_DOWNLOAD_STATE' })
+    setUrlError(null)
+    return true
+  }, [state])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      // A field handles its own Escape; the URL field's is on the input below,
+      // and every other field on the page should keep the key for itself.
+      if (isEditableTarget(event.target)) return
+      if (clearResult() && finePointer) inputRef.current?.focus()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [clearResult, finePointer])
+
+  /**
+   * After a save, the cursor goes back to the field for the next link.
+   *
+   * Only where there is a real pointer and a real keyboard. On a phone,
+   * focusing an input raises the on-screen keyboard over the result that was
+   * just saved — turning a courtesy into an ambush — which is what
+   * `useHasFinePointer` is for.
+   */
+  const lastFocusedMessage = useRef('')
+
+  useEffect(() => {
+    if (!finePointer) return
+    if (!isSuccessMessage(state.message)) return
+    if (isResolvingOrDownloading(state)) return
+    if (lastFocusedMessage.current === state.message) return
+    lastFocusedMessage.current = state.message
+    inputRef.current?.focus({ preventScroll: true })
+  }, [finePointer, state])
 
   /**
    * Drop a link onto the page and it resolves.
@@ -1642,7 +1761,20 @@ export function DownloaderApp() {
               if (e.key === 'Enter') {
                 e.preventDefault()
                 handleProcess()
+                return
               }
+              // Escape undoes one step, and the field is the first step. This
+              // matters more than it sounds: after a save the cursor is put
+              // back here, so without this the key that clears the card is
+              // swallowed by the field at exactly the moment somebody would
+              // reach for it.
+              if (e.key !== 'Escape') return
+              if (state.url) {
+                dispatch({ type: 'SET_URL', payload: '' })
+                setUrlError(null)
+                return
+              }
+              clearResult()
             }}
             onFocus={() => {
               // Fallback for browsers that raise the keyboard without a

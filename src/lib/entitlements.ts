@@ -66,6 +66,20 @@ export function useAutoSave(): boolean {
   return tier === 'pro' && autoSave === true
 }
 
+/**
+ * Whether returning to the tab should resolve the link on the clipboard.
+ *
+ * The one entitlement here that reads something the visitor did not hand over,
+ * so it is gated twice: on the tier, and on the preference being switched on
+ * deliberately. `usePrefs` defaults it to absent and nothing turns it on but
+ * the toggle in the account panel.
+ */
+export function useClipboardWatch(): boolean {
+  const tier = useTier()
+  const { clipboardWatch } = usePrefs()
+  return tier === 'pro' && clipboardWatch === true
+}
+
 export function useProToken(): string | null {
   // Subscribing to the account store is what re-renders this when a refresh
   // lands; the token itself is read imperatively because it is not part of the

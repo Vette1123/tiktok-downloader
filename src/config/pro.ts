@@ -82,6 +82,10 @@ export const PRO_BENEFITS: ProBenefit[] = [
     body: 'Switch it on and a pasted link starts downloading the moment it resolves. Carousels still wait for you to pick.',
   },
   {
+    title: 'Watches your clipboard',
+    body: 'Copy a link anywhere, switch back to the tab, and it is already resolving. With the setting above, the file is already saving.',
+  },
+  {
     title: 'File names your way',
     body: 'Set the shape once — {date}, {platform}, {author}, {title}, {index} — and every download lands named for the library you keep, on every device you sign in to.',
   },
