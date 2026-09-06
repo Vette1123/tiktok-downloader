@@ -668,6 +668,11 @@ function buildChecks() {
  *   figure whose archive is part of the point. A deleted post is a false
  *   alarm, and a monitor that cries wolf gets muted, which is worse than not
  *   having one.
+ * - **A platform's own documentation is the best source of a durable URL.**
+ *   TikTok and Twitch both went unprobed for months because their sites have
+ *   no obvious permanent post and guessing is banned by the rule above. Both
+ *   publish an example video in their embed docs, which the platform itself
+ *   has a reason to keep working.
  * - When a probe does go red, check the URL in a browser BEFORE touching the
  *   extractor. "The post is gone" and "the extractor is broken" look identical
  *   from here.
@@ -705,6 +710,25 @@ const PLATFORM_PROBES = [
     expectVideo: true,
   },
   { platform: 'twitter', url: 'https://x.com/NASA/status/2094078415376658588' },
+  // TikTok had no probe at all until 2026-09-07, on the biggest platform this
+  // site serves — because the rule above (never guess a URL) is easy to satisfy
+  // for a site with permalinks and hard for one without. This is the example
+  // video in TikTok's own developer documentation for embeds, which is about as
+  // durable as a TikTok link gets: TikTok itself has a reason to keep it up.
+  // Verified end to end before being added — 206, `ftyp`, real MP4.
+  {
+    platform: 'tiktok',
+    url: 'https://www.tiktok.com/@scout2015/video/6718335390845095173',
+    expectVideo: true,
+  },
+  // Same trick, same reason: the clip in Twitch's own embed documentation.
+  // Twitch is one of the best-effort platforms, so this is also the only thing
+  // that will say when best-effort stops working.
+  {
+    platform: 'twitch',
+    url: 'https://clips.twitch.tv/IncredulousAbstemiousFennelImGlitch',
+    expectVideo: true,
+  },
 ]
 
 /**

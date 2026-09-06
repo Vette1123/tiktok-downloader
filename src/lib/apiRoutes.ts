@@ -19,6 +19,7 @@
 import { Downloader } from './downloader'
 import { validateUrl, detectPlatform, parseYouTubeId } from './validator'
 import { getCached, setCached } from './responseCache'
+import { worthCaching } from './cacheWorthy'
 import { readEdgeCache, writeEdgeCache, type WaitUntilContext } from './edgeCache'
 import { slugify } from './filename'
 import { nativeMediaAvailable, nativeMediaUnavailable } from './nativeMedia'
@@ -357,7 +358,12 @@ export async function handleDownload(
     const body = JSON.stringify(payload)
     // Never store a credentialed result. See the bypass above: both stores are
     // shared, and one of them is externally addressable.
-    if (!credentialed) {
+    //
+    // And never store a video link that came back without a video: that is us
+    // being rate-limited, not a fact about the post, and caching it turns one
+    // refused extraction into minutes of everyone getting the cover image
+    // instead of the reel. See cacheWorthy.ts.
+    if (!credentialed && worthCaching(url, payload)) {
       setCached(cacheKey, body)
       writeEdgeCache(origin, cacheKey, body, ctx)
     }

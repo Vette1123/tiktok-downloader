@@ -21,10 +21,15 @@
 //   3. `caches` does not exist off-workerd at all (`next dev`, Node hosts, the
 //      profiling harness), hence the capability check rather than a build flag.
 //
-// TTL is deliberately shorter than responseCache's: what we are storing is a set
-// of EPHEMERAL signed CDN links and Cobalt tunnels, and handing back a dead URL
-// is worse than re-resolving. Two minutes covers the realistic repeat window
-// (paste, look at the preview, hit download) with margin to spare.
+
+import { cacheableForMs } from './urlExpiry'
+
+// A ceiling, not the whole rule. What is stored is a set of EPHEMERAL signed
+// CDN links and Cobalt tunnels, and handing back a dead URL is worse than
+// re-resolving — but "two minutes is short enough" was a guess, and a measured
+// Cobalt tunnel lives 92 seconds, so the last half-minute of every edge entry
+// served a download that answered 404. `cacheableForMs` shortens the entry to
+// the expiry the URLs themselves carry. See lib/urlExpiry.ts.
 const EDGE_TTL_SECONDS = 120
 
 /**
@@ -104,12 +109,19 @@ export function writeEdgeCache(
   const cache = edgeCache()
   if (!cache) return
 
+  // The two-minute ceiling was still too long: a Cobalt tunnel lives 92
+  // seconds, so the last half-minute of an edge entry served a dead download.
+  // The URLs say when they die; the entry is cut to match, or skipped when
+  // there is not enough left to be worth serving. See lib/urlExpiry.ts.
+  const lifetime = cacheableForMs(body, EDGE_TTL_SECONDS * 1000, Date.now())
+  if (lifetime <= 0) return
+
   const stored = new Response(body, {
     headers: {
       'Content-Type': 'application/json',
       // What actually sets the entry's lifetime — the Cache API honours
       // Cache-Control on the stored response.
-      'Cache-Control': `public, max-age=${EDGE_TTL_SECONDS}`,
+      'Cache-Control': `public, max-age=${Math.floor(lifetime / 1000)}`,
     },
   })
 

@@ -13,6 +13,16 @@
 // to absorb immediate repeats (the download happens seconds after the resolve,
 // while the URL is still live), short enough that a re-tap minutes later
 // re-resolves fresh. Never cache failures.
+//
+// "Short enough" turned out to be a guess, and the wrong one. Measured against
+// production on 2026-09-07, a Cobalt tunnel is valid for 92 seconds — so for
+// the last 88 seconds of an entry's life, every visitor served from it got a
+// download button that answered 404. The TTL below is now a ceiling rather than
+// the whole rule: `cacheableForMs` reads the expiry the URLs themselves carry
+// and shortens the entry to match, or refuses to store it at all when there is
+// not enough life left to be worth serving. See lib/urlExpiry.ts.
+
+import { cacheableForMs } from './urlExpiry'
 
 const TTL_MS = 3 * 60 * 1000 // 3 minutes — see note above on ephemeral URLs.
 const MAX_ENTRIES = 200 // hard cap so a warm instance can't grow unbounded.
@@ -44,8 +54,16 @@ export function getCached(key: string): string | null {
 }
 
 export function setCached(key: string, body: string): void {
+  const now = Date.now()
+  const lifetime = cacheableForMs(body, TTL_MS, now)
+  // Zero means the URLs inside die too soon to be worth handing to anyone. A
+  // miss re-resolves and works; a hit on this would not.
+  if (lifetime <= 0) {
+    store.delete(key)
+    return
+  }
   if (store.has(key)) store.delete(key)
-  store.set(key, { body, expires: Date.now() + TTL_MS })
+  store.set(key, { body, expires: now + lifetime })
   // Evict oldest entries past the cap (usually just one per insert).
   while (store.size > MAX_ENTRIES) {
     const oldest = store.keys().next().value
