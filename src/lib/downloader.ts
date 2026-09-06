@@ -172,6 +172,34 @@ export function resetCobaltCooldown(): void {
 }
 
 /**
+ * How long to stop asking Instagram for the crawler view of a post after it
+ * answers 429.
+ *
+ * This is the difference between a scratch Worker and a busy one, and it cost
+ * an afternoon to see: a preview Worker on Cloudflare's network gets 200 and a
+ * 731 KB page carrying `video_versions`, while production — whose egress
+ * addresses have been serving this site all day — gets `429, 0 chars` for the
+ * same URL in the same minute. The limit is on our address, not on the post.
+ *
+ * So the answer is to ask less, not to retry: every request that keeps asking
+ * during the window is a doomed subrequest AND another mark against the
+ * address. Per isolate, like the cobalt cooldown, and for the same reason —
+ * approximately right in each isolate is the whole benefit, and shared state
+ * would cost more than it saves.
+ */
+const IG_CRAWLER_COOLDOWN_MS = 10 * 60 * 1000
+let instagramCrawlerBlockedUntil = 0
+
+function instagramCrawlerCoolingDown(): boolean {
+  return Date.now() < instagramCrawlerBlockedUntil
+}
+
+/** Test seam: module state that outlives a single test. */
+export function resetInstagramCrawlerCooldown(): void {
+  instagramCrawlerBlockedUntil = 0
+}
+
+/**
  * What a probe of a candidate stream found.
  *
  * `unreachable` is a maybe: this host could not fetch it, which a visitor on a
@@ -3784,6 +3812,9 @@ export class Downloader {
   ): Promise<VideoData | null> {
     const mediaId = instagramMediaId(shortcode)
     if (!mediaId) return null
+    // Instagram is rate-limiting this address. Asking again inside the window
+    // buys a doomed 731 KB request and another mark against us.
+    if (instagramCrawlerCoolingDown()) return null
 
     const response = await http.get(
       `https://www.instagram.com/reel/${shortcode}/`,
@@ -3801,8 +3832,14 @@ export class Downloader {
     // a `doc_id` that started failing with a 200. One line, once, per failure.
     const html = typeof response.data === 'string' ? response.data : ''
     if (response.status !== 200 || !html) {
+      if (response.status === 429) {
+        instagramCrawlerBlockedUntil = Date.now() + IG_CRAWLER_COOLDOWN_MS
+      }
       console.warn(
         `instagram crawler view: ${shortcode} answered ${response.status}, ${html.length} chars`,
+        response.status === 429
+          ? `— rate limited, holding off for ${IG_CRAWLER_COOLDOWN_MS / 60000} minutes`
+          : '',
       )
       return null
     }

@@ -53,6 +53,28 @@ Alongside it, three adjacent defects the same reading turned up:
   embed's children carry none; Instagram's own encoder writes `duration_s` into
   the signed URL's `efg` parameter, so the URL answers it.
 
+## Then production refused the new path, and a scratch Worker did not
+
+Deployed, the reel in the report stopped downloading a JPEG — and stopped
+downloading anything. `tryInstagramCrawlerView` returned null in production
+while the scratch Worker I had verified it with, on the same network, in the
+same minute, still got 200 and a 731 KB page carrying `video_versions`. The
+parser was not the difference: copied verbatim into the scratch Worker, it
+pulled the right clip out of the page CF had fetched.
+
+The Worker could not say which of four silences it was, so I shipped a log line
+that names them. One request answered it:
+
+```
+instagram crawler view: DKcalTzoftf answered 429, 0 chars
+```
+
+**Instagram rate-limits the address, not the post.** A preview Worker is a cold
+address; production has been serving this site all day. Retrying is the wrong
+instinct — it deepens the limit and costs a doomed 731 KB subrequest per
+attempt — so a 429 now benches the crawler view for ten minutes per isolate,
+the same shape as the cobalt cooldown above it.
+
 ## Mistakes
 
 - **I spent a long time hunting the wrong shape.** The first hypothesis was the
@@ -101,7 +123,11 @@ Alongside it, three adjacent defects the same reading turned up:
 - **A scratch worker under `wrangler dev --remote`** to answer "does Instagram
   serve the crawler view to a Cloudflare IP". It does, and the extracted URL
   streams 206 `video/mp4` from there. That is the only way to know, and it is
-  ten minutes of work.
+  ten minutes of work — but see above: it answers for a *cold* address, and the
+  deployment is not one.
+- **Copying the production parser verbatim into that scratch worker.** It ruled
+  out half the problem in one request: same network, same page, right answer,
+  so the parse was never the difference.
 - **A throwaway live vitest** driving the real `Downloader` against the real
   internet, deleted before committing. Five URLs, one line of output each, and
   it caught the `duration: 0` that no fixture would have.
@@ -120,6 +146,13 @@ Alongside it, three adjacent defects the same reading turned up:
   A probe that returns a boolean will get them confused sooner or later.
 - Refusing a wrong answer is half a fix. Find the path that gives the right one
   before calling it done.
+- A capability verified from a scratch Worker is verified from a *cold address*.
+  Anything rate-limited per-IP will behave differently from the deployment that
+  has been serving traffic all day, and the scratch Worker will keep saying it
+  works.
+- A `return null` with four causes behind it is not a diagnosis, it is a place
+  to put a log line. One request settled what an afternoon of reasoning could
+  not.
 - Every probe of a video must assert the bytes are a video. The Instagram probe
   passed on `images.length` alone, so nothing in this repo had ever checked that
   an Instagram *video* resolved to a video — for as long as that was true.

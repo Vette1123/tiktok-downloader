@@ -8,6 +8,7 @@ import {
   instagramUrlDuration,
   parseInstagramCrawlerMedia,
   resetCobaltCooldown,
+  resetInstagramCrawlerCooldown,
 } from './downloader'
 
 /**
@@ -58,6 +59,7 @@ function priv(downloader: Downloader): PrivateDownloader {
 afterEach(() => {
   vi.unstubAllGlobals()
   resetCobaltCooldown()
+  resetInstagramCrawlerCooldown()
 })
 
 describe('what Cobalt actually put in the tunnel', () => {
@@ -488,5 +490,55 @@ describe('choosing a rendition from the media API', () => {
       'video',
     ])
     expect(result?.duration).toBe(7)
+  })
+})
+
+/**
+ * The difference between a scratch Worker and a busy one.
+ *
+ * A preview Worker on Cloudflare's network gets 200 and a 731 KB page carrying
+ * `video_versions`; production, whose addresses have been serving this site all
+ * day, gets `429, 0 chars` for the same URL in the same minute. The limit is on
+ * the address, not the post — so the answer is to ask less, not to retry.
+ */
+describe('the crawler view under a rate limit', () => {
+  afterEach(() => {
+    resetInstagramCrawlerCooldown()
+  })
+
+  it('stops asking after a 429, rather than retrying into it', async () => {
+    const fetchSpy = vi.fn(
+      async () => new Response('', { status: 429, headers: { 'content-type': 'text/html' } }),
+    )
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const d = new Downloader()
+    await expect(
+      priv(d).tryInstagramCrawlerView('DKcalTzoftf', 'https://www.instagram.com/reel/x/'),
+    ).resolves.toBeNull()
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+    // Every later resolve in this isolate skips the request entirely: it would
+    // be a doomed 731 KB download and another mark against the address.
+    await expect(
+      priv(d).tryInstagramCrawlerView('C8CaBfWs1mr', 'https://www.instagram.com/reel/y/'),
+    ).resolves.toBeNull()
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('is not held back by an ordinary miss', async () => {
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response('<html>nothing</html>', {
+          status: 200,
+          headers: { 'content-type': 'text/html' },
+        }),
+    )
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const d = new Downloader()
+    await priv(d).tryInstagramCrawlerView('DKcalTzoftf', 'https://www.instagram.com/reel/x/')
+    await priv(d).tryInstagramCrawlerView('C8CaBfWs1mr', 'https://www.instagram.com/reel/y/')
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
   })
 })
