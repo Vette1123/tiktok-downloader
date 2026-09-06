@@ -15,6 +15,7 @@ import {
   appReducer,
   initialState,
   isResolvingOrDownloading,
+  isSavedMessage,
   isSuccessMessage,
   type VideoMetadata,
 } from '@/lib/appReducer'
@@ -43,7 +44,12 @@ import { ProNudge } from '@/components/ProNudge'
 import { SUPPORT_PRICES } from '@/config/support'
 import { parseBatchInput } from '@/lib/batchQueue'
 import { recordResolve } from '@/lib/proSignals'
-import { nowMs, useHasFinePointer, useIsIOSLike } from '@/lib/clientEnv'
+import {
+  formatDate,
+  nowMs,
+  useHasFinePointer,
+  useIsIOSLike,
+} from '@/lib/clientEnv'
 import { setFormat, setQuality, usePrefs } from '@/lib/prefs'
 import { buildDownloadFilename, formatBytes } from '@/lib/filename'
 import { parseYouTubeId } from '@/lib/validator'
@@ -52,7 +58,7 @@ import { ThumbnailButton } from '@/components/ThumbnailButton'
 import { ShareButton } from '@/components/ShareButton'
 import { CopyLinkButton } from '@/components/CopyLinkButton'
 import { friendlyError } from '@/lib/errorMessages'
-import { useT } from '@/lib/i18nStore'
+import { useLocale, useT } from '@/lib/i18nStore'
 import {
   clearPlatformQuality,
   effectiveQuality,
@@ -75,6 +81,7 @@ import {
   useClipboardWatch,
   useFilenameTemplate,
   useProToken,
+  useSaveBoth,
 } from '@/lib/entitlements'
 import {
   addHistory,
@@ -83,6 +90,7 @@ import {
   getHistorySnapshot,
   getHistoryServerSnapshot,
   importHistory,
+  markSaved,
   removeHistory,
   subscribeHistory,
   type HistoryEntry,
@@ -90,6 +98,7 @@ import {
 import { saveBlob } from '@/lib/blobSaver'
 import { autoSaveTarget } from '@/lib/autoSave'
 import { clipboardDecision } from '@/lib/clipboardWatch'
+import { savedAgo } from '@/lib/savedAgo'
 import { carriesText, droppedLink, isEditableTarget } from '@/lib/linkDrop'
 
 // Pull the first http(s) URL out of arbitrary shared text. Android's share sheet
@@ -655,9 +664,13 @@ export function DownloaderApp() {
   const filenameTemplate = useFilenameTemplate()
   // Whether a resolved link starts saving without a second tap.
   const autoSave = useAutoSave()
+  // Whether the card offers the video and the MP3 in one tap.
+  const saveBothAllowed = useSaveBoth()
   // Core-flow copy follows the chosen language (footer picker); deep copy —
   // hints, FAQ, legal — stays English by design. See lib/i18n.ts.
   const t = useT()
+  // The same choice as a tag, for the Intl formatters that do their own wording.
+  const locale = useLocale()
   // Bumped when a per-platform quality override changes, so the hint under
   // the quality toggle repaints (storage itself is not reactive). The map
   // snapshot lives in state; resolveOne reads storage fresh at call time.
@@ -1176,6 +1189,29 @@ export function DownloaderApp() {
   }, [finePointer, state])
 
   /**
+   * Stamp the Recent row once a file has actually reached the disk.
+   *
+   * One effect over the card's state rather than a call in each of the eight
+   * completion paths (video direct, video proxied, audio direct, audio proxied,
+   * slideshow, ZIP, per-image, download-manager hand-off). Eight call sites is
+   * eight chances to forget one, and the forgotten one would quietly claim a
+   * link had never been saved.
+   *
+   * `isSavedMessage` is deliberately narrower than `isSuccessMessage`: a
+   * finished resolve also reads as a success, and a link somebody merely pasted
+   * is exactly what this must not mark.
+   */
+  const lastSavedMessage = useRef('')
+
+  useEffect(() => {
+    if (!state.originalUrl) return
+    if (!isSavedMessage(state.message)) return
+    if (lastSavedMessage.current === state.message + state.originalUrl) return
+    lastSavedMessage.current = state.message + state.originalUrl
+    markSaved(state.originalUrl, nowMs())
+  }, [state.message, state.originalUrl])
+
+  /**
    * Drop a link onto the page and it resolves.
    *
    * Counted rather than toggled: `dragleave` fires every time the pointer
@@ -1670,6 +1706,51 @@ export function DownloaderApp() {
   )
   const galleryNoun = galleryHasVideo ? 'items' : 'images'
 
+  /**
+   * Whether "Save both" is worth offering.
+   *
+   * Three conditions, and all three are about there being two real files: a
+   * video stream, a separate audio track, and not a carousel (whose gallery is
+   * a selection rather than a file). Supporter-gated because what it removes is
+   * the second tap and the wait between them, never access to anything — the
+   * same rule every other entitlement here follows. See config/pro.ts.
+   */
+  const canSaveBoth =
+    saveBothAllowed &&
+    !!state.downloadUrl &&
+    !!state.audioUrl &&
+    !state.videoMetadata?.isPhotoCarousel &&
+    (state.videoMetadata?.images?.length ?? 0) === 0
+
+  /**
+   * Save the video, then the MP3.
+   *
+   * Sequential, not parallel. Both handlers drive the same single progress bar
+   * and the same `downloading` flags, so firing them together would race the
+   * readout into nonsense — and browsers throttle concurrent downloads from one
+   * origin anyway, so the wall-clock saving would be nil.
+   */
+  const handleSaveBoth = async () => {
+    await handleVideoDownload()
+    await handleAudioDownload()
+  }
+
+  /**
+   * "Saved 2 hours ago", when this exact link has been downloaded before.
+   *
+   * Recomputed against the current time on every render rather than memoised on
+   * the entry: the phrase is a function of *now*, and a memo keyed on the row
+   * would keep saying "this minute" for an hour. The list is capped at thirty,
+   * so the lookup is free.
+   */
+  const savedNote = (() => {
+    if (!state.originalUrl) return null
+    const savedAt = history.find((e) => e.url === state.originalUrl)?.savedAt
+    if (!savedAt) return null
+    const ago = savedAgo(savedAt, nowMs(), locale)
+    return ago ? `Saved ${ago}` : `Saved on ${formatDate(savedAt)}`
+  })()
+
   const toggleImageGallery = () => {
     dispatch({ type: 'TOGGLE_IMAGE_GALLERY' })
   }
@@ -2076,6 +2157,16 @@ export function DownloaderApp() {
                         t('savedLink')}
                     </span>
                   </span>
+                  {/* A tick on the rows whose file is already on this device.
+                      The list is a mix of "looked at" and "got", and only one
+                      of those is worth tapping again. Sized and coloured to be
+                      findable while scanning, not to compete with the title. */}
+                  {h.savedAt && (
+                    <CheckIcon
+                      className='h-3.5 w-3.5 shrink-0 text-cyan-300/70'
+                      aria-label='Already downloaded'
+                    />
+                  )}
                 </button>
                 <button
                   type='button'
@@ -2163,9 +2254,10 @@ export function DownloaderApp() {
             lede={
               <>
                 Saved you some time? This site is free to use and not free to
-                run — supporters get the batch queue, downloads named the way
-                they file things, priority on every link and no sponsor card,
-                switched on automatically.
+                run — supporters get links that save themselves as soon as they
+                resolve, a clipboard that is watched while they work, the batch
+                queue, downloads named the way they file things, priority on
+                every link and no sponsor card.
               </>
             }
           />
@@ -2244,6 +2336,17 @@ export function DownloaderApp() {
                           <span className='mx-1.5 text-white/25'>·</span>
                         )}
                       {formatBytes(state.videoMetadata.sizeBytes)}
+                    </p>
+                  )}
+                  {/* "You already have this one." The question somebody working
+                      through a folder of posts actually has, and the only place
+                      that can answer it is the Recent list, which is local. Shown
+                      only when a file really reached the disk — a link that was
+                      merely pasted before is not one you have. */}
+                  {savedNote && (
+                    <p className='mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] text-white/55'>
+                      <CheckIcon className='h-3 w-3 flex-shrink-0 text-cyan-300/80' />
+                      {savedNote}
                     </p>
                   )}
                   {state.originalUrl &&
@@ -2770,6 +2873,25 @@ export function DownloaderApp() {
                   </div>
                 )
               })()}
+
+              {/* Both files, one tap. Only where there are genuinely two files
+                  to get — a video AND a separate audio track — and only for
+                  supporters, because what it removes is the second tap and the
+                  wait between, never access to anything. A carousel is excluded
+                  for the same reason auto-save excludes it: the gallery is a
+                  selection, not a file. */}
+              {canSaveBoth && (
+                <button
+                  onClick={handleSaveBoth}
+                  disabled={isResolvingOrDownloading(state)}
+                  className='btn-ghost btn-press w-full rounded-xl px-4 py-2.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50'
+                >
+                  <span className='relative inline-flex items-center gap-2'>
+                    <DownloadIcon className='h-4 w-4 flex-shrink-0' />
+                    Save both — video and MP3
+                  </span>
+                </button>
+              )}
 
               {/* Extras row. Share and Copy-link apply to every resolved
                   result, so the row's own condition is "there is a result" —

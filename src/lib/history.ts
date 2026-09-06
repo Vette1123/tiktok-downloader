@@ -19,6 +19,17 @@ export interface HistoryEntry {
   thumbnail?: string
   /** Epoch ms; set by the caller (module can't call Date.now during render). */
   ts: number
+  /**
+   * When a file for this link was actually saved, if one ever was.
+   *
+   * Deliberately separate from `ts`, which is set the moment a link *resolves*.
+   * Resolving and saving are different events — a visitor pastes several links,
+   * looks at the cards, downloads two of them — and "have I already got this
+   * one" is a question only the second answers. Absent on every entry written
+   * before this field existed, which reads correctly as "not known to be
+   * saved".
+   */
+  savedAt?: number
 }
 
 const KEY = 'smd:history:v1'
@@ -65,12 +76,52 @@ export function loadHistory(): HistoryEntry[] {
  */
 export function addHistory(entry: HistoryEntry): HistoryEntry[] {
   if (!canUse()) return []
-  const existing = loadHistory().filter((e) => e.url !== entry.url)
-  const next = [entry, ...existing].slice(0, MAX)
+  const current = loadHistory()
+  // Pasting a link again does not un-download the file. Without this, the
+  // "already saved" mark is wiped by the very act of looking the post up
+  // again — which is exactly the moment somebody wants to be told.
+  const previous = current.find((e) => e.url === entry.url)
+  const merged =
+    previous?.savedAt && !entry.savedAt
+      ? { ...entry, savedAt: previous.savedAt }
+      : entry
+  const existing = current.filter((e) => e.url !== entry.url)
+  const next = [merged, ...existing].slice(0, MAX)
   try {
     window.localStorage.setItem(KEY, JSON.stringify(next))
   } catch {
     // quota / disabled — history is best-effort, ignore.
+  }
+  commit(next)
+  return next
+}
+
+/**
+ * Record that a file was saved for this link.
+ *
+ * Only ever stamps a row that already exists: every download is preceded by the
+ * resolve that wrote the row, so a missing one means the history was cleared
+ * mid-download, and inventing an entry there would put a link back in a list
+ * somebody had just emptied.
+ *
+ * `addHistory` is not reused because it moves the row to the top, and saving a
+ * file is not the same event as pasting a link — a download that finishes after
+ * three later pastes should not reorder them.
+ */
+export function markSaved(url: string, at: number): HistoryEntry[] {
+  if (!canUse()) return []
+  const current = loadHistory()
+  let found = false
+  const next = current.map((entry) => {
+    if (entry.url !== url) return entry
+    found = true
+    return { ...entry, savedAt: at }
+  })
+  if (!found) return current
+  try {
+    window.localStorage.setItem(KEY, JSON.stringify(next))
+  } catch {
+    // quota / disabled — the in-memory list is still correct for this tab.
   }
   commit(next)
   return next
@@ -137,7 +188,18 @@ export function mergeEntries(
   // how an untouched row is told apart from one an import replaced.
   const oldByUrl = new Map(existing.map((e) => [e.url, e]))
   const byUrl = new Map(oldByUrl)
-  for (const entry of valid) byUrl.set(entry.url, entry)
+  for (const entry of valid) {
+    // Same rule as addHistory: an import must not un-download a file. An export
+    // taken before this field existed carries no `savedAt` at all, and it would
+    // otherwise clear the mark on every row it replaced.
+    const previous = oldByUrl.get(entry.url)
+    byUrl.set(
+      entry.url,
+      previous?.savedAt && !entry.savedAt
+        ? { ...entry, savedAt: previous.savedAt }
+        : entry,
+    )
+  }
 
   const list = [...byUrl.values()]
     .sort((a, b) => b.ts - a.ts)

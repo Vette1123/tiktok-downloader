@@ -80,6 +80,19 @@ export function useClipboardWatch(): boolean {
   return tier === 'pro' && clipboardWatch === true
 }
 
+/**
+ * Whether the card offers to save the video and the MP3 in one tap.
+ *
+ * Unlike the two above there is no preference behind it: there is nothing to
+ * configure, only a button that either appears or does not. Still a hook rather
+ * than a bare `useTier() === 'pro'` at the call site, so that every entitlement
+ * is asked the same question in the same place and a future change of rule has
+ * one home.
+ */
+export function useSaveBoth(): boolean {
+  return useTier() === 'pro'
+}
+
 export function useProToken(): string | null {
   // Subscribing to the account store is what re-renders this when a refresh
   // lands; the token itself is read imperatively because it is not part of the

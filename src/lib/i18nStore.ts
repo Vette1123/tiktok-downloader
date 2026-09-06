@@ -76,15 +76,23 @@ export function setLocale(next: Locale): void {
  * the locale changes; falls back per-key to English for anything a dictionary
  * has not caught up with yet.
  */
-export function useT(): (
-  key: TKey,
-  vars?: Record<string, string | number>,
-) => string {
-  const locale = useSyncExternalStore(
+/**
+ * The chosen language, for the places that need it as a value rather than as a
+ * lookup: `Intl` formatters, which do their own wording and only want a tag.
+ */
+export function useLocale(): Locale {
+  return useSyncExternalStore(
     subscribeLocale,
     getLocaleSnapshot,
     getLocaleServerSnapshot,
   )
+}
+
+export function useT(): (
+  key: TKey,
+  vars?: Record<string, string | number>,
+) => string {
+  const locale = useLocale()
   return useCallback(
     (key: TKey, vars?: Record<string, string | number>) =>
       translate(locale, key, vars),

@@ -52,3 +52,36 @@ describe('mergeEntries', () => {
     expect(list).toBe(existing) // same reference — callers can skip a write
   })
 })
+
+/**
+ * The saved mark: whether a file for this link actually reached the disk, as
+ * opposed to `ts`, which only says when the link was last looked up.
+ *
+ * The rule that matters is that looking a post up again must not un-download
+ * it. The first version of this got that wrong in the one case where the mark
+ * is most useful — pasting a link you already have — because `addHistory`
+ * dedupes by URL and the fresh entry carried no `savedAt`.
+ */
+describe('the saved mark', () => {
+  const OLDER = { url: 'https://x.test/a', title: 'A', author: '', ts: 100 }
+  const NEWER = { url: 'https://x.test/b', title: 'B', author: '', ts: 200 }
+
+  it('survives the same link being resolved again', () => {
+    const stamped = { ...OLDER, savedAt: 555 }
+    const { list } = mergeEntries([stamped], [{ ...OLDER, ts: 900 }])
+    expect(list[0].savedAt).toBe(555)
+    expect(list[0].ts).toBe(900)
+  })
+
+  /** An incoming entry that knows about a save wins over one that does not. */
+  it('takes an incoming mark when there was none', () => {
+    const { list } = mergeEntries([OLDER], [{ ...OLDER, savedAt: 777 }])
+    expect(list[0].savedAt).toBe(777)
+  })
+
+  it('leaves rows it does not touch alone', () => {
+    const { list } = mergeEntries([{ ...NEWER, savedAt: 42 }], [OLDER])
+    expect(list.find((e) => e.url === NEWER.url)?.savedAt).toBe(42)
+    expect(list.find((e) => e.url === OLDER.url)?.savedAt).toBeUndefined()
+  })
+})

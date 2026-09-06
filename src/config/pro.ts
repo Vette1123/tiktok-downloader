@@ -82,6 +82,10 @@ export const PRO_BENEFITS: ProBenefit[] = [
     body: 'Switch it on and a pasted link starts downloading the moment it resolves. Carousels still wait for you to pick.',
   },
   {
+    title: 'Both files, one tap',
+    body: 'Where a post has a video and a separate soundtrack, save the MP4 and the MP3 together instead of resolving it twice.',
+  },
+  {
     title: 'Watches your clipboard',
     body: 'Copy a link anywhere, switch back to the tab, and it is already resolving. With the setting above, the file is already saving.',
   },

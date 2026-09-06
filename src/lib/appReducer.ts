@@ -170,10 +170,28 @@ export function autoOpensPreview({
  * already agreed on, and it is the only part of those strings that is not
  * prose someone will reword.
  */
-const SUCCESS_MARKERS = ['success', '🎉', '🎵', '🎬', '🖼️'] as const
+const SAVED_MARKERS = ['🎉', '🎵', '🎬', '🖼️'] as const
+const SUCCESS_MARKERS = ['success', ...SAVED_MARKERS] as const
 
 export function isSuccessMessage(message: string): boolean {
   return SUCCESS_MARKERS.some((marker) => message.includes(marker))
+}
+
+/**
+ * Whether a file actually reached the visitor's disk.
+ *
+ * Narrower than `isSuccessMessage`, and the difference is the whole point: a
+ * finished *resolve* also reads as a success ("Content processed successfully!")
+ * and it is not a download. The Recent list stamps a row as saved off this, so
+ * treating the two alike would mark every link somebody merely pasted as one
+ * they already have — which is the opposite of the question it answers.
+ *
+ * The emoji are the marker because they are what the eight completion paths
+ * already agreed on, in five languages, and they are the only part of those
+ * strings that is not prose somebody will reword.
+ */
+export function isSavedMessage(message: string): boolean {
+  return SAVED_MARKERS.some((marker) => message.includes(marker))
 }
 
 /**
