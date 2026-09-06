@@ -76,6 +76,12 @@ export const PRO_BENEFITS: ProBenefit[] = [
     body: 'A whole batch run collects into a single archive — twenty links in, one file out — instead of twenty separate saves.',
   },
   {
+    // Nothing here that a free visitor cannot already download; what is dropped
+    // is the second tap, not a restriction. See the note above this list.
+    title: 'Saves without asking',
+    body: 'Switch it on and a pasted link starts downloading the moment it resolves. Carousels still wait for you to pick.',
+  },
+  {
     title: 'File names your way',
     body: 'Set the shape once — {date}, {platform}, {author}, {title}, {index} — and every download lands named for the library you keep, on every device you sign in to.',
   },

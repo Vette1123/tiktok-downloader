@@ -70,7 +70,11 @@ import {
   reportProgress,
   subscribeProgress,
 } from '@/lib/downloadProgress'
-import { useFilenameTemplate, useProToken } from '@/lib/entitlements'
+import {
+  useAutoSave,
+  useFilenameTemplate,
+  useProToken,
+} from '@/lib/entitlements'
 import {
   addHistory,
   clearHistory,
@@ -83,6 +87,8 @@ import {
   type HistoryEntry,
 } from '@/lib/history'
 import { saveBlob } from '@/lib/blobSaver'
+import { autoSaveTarget } from '@/lib/autoSave'
+import { carriesText, droppedLink, isEditableTarget } from '@/lib/linkDrop'
 
 // Pull the first http(s) URL out of arbitrary shared text. Android's share sheet
 // often hands a link inside `text` wrapped in a caption ("check this out <url>"),
@@ -323,6 +329,21 @@ function downloadManagerUrl(
   if (isAttachment) return directUrl
   if (outcome === 'too-big' && proxiedUrl) return proxiedUrl
   return null
+}
+
+/**
+ * The paste bar's ring colour.
+ *
+ * One token, three reasons to light it: an invalid link (red), a link being
+ * dragged over the page (cyan, lit now), and focus (cyan, lit on
+ * `focus-within`). Dragging borrows the focus ring rather than introducing a
+ * drop overlay, because a link arriving and the caret arriving mean the same
+ * thing to the visitor: this is where it goes.
+ */
+function pasteBarAccent(hasError: boolean, dragging: boolean): string {
+  if (hasError) return '[--surface-line:rgba(248,113,113,0.6)]'
+  if (dragging) return '[--surface-line:rgba(34,211,238,0.6)]'
+  return 'focus-within:[--surface-line:rgba(34,211,238,0.6)]'
 }
 
 /**
@@ -619,6 +640,8 @@ export function DownloaderApp() {
   const proToken = useProToken()
   // A supporter's saved-filename shape, or undefined for the built-in one.
   const filenameTemplate = useFilenameTemplate()
+  // Whether a resolved link starts saving without a second tap.
+  const autoSave = useAutoSave()
   // Core-flow copy follows the chosen language (footer picker); deep copy —
   // hints, FAQ, legal — stays English by design. See lib/i18n.ts.
   const t = useT()
@@ -1010,6 +1033,68 @@ export function DownloaderApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  /**
+   * Paste anywhere on the page and the link resolves.
+   *
+   * The clipboard arrives on the event itself, so unlike the Paste chip (which
+   * calls `navigator.clipboard.readText()`) this needs no permission and works
+   * in Firefox, where read access is refused outright. It defers to any field
+   * the visitor is actually typing in, and to a selection they may be copying
+   * out of, so it only ever fires on a paste that had nowhere else to go.
+   */
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      if (isEditableTarget(event.target)) return
+      if (!window.getSelection()?.isCollapsed) return
+      const found = extractFirstUrl(event.clipboardData?.getData('text') ?? '')
+      if (!found) return
+      event.preventDefault()
+      handleProcess(found)
+    }
+    document.addEventListener('paste', onPaste)
+    return () => document.removeEventListener('paste', onPaste)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  /**
+   * Drop a link onto the page and it resolves.
+   *
+   * Counted rather than toggled: `dragleave` fires every time the pointer
+   * crosses into a child element, so a boolean flickers off the moment the link
+   * passes over the Download button. The counter only reaches zero when the
+   * drag has genuinely left the card.
+   */
+  const dragDepth = useRef(0)
+  const [dragging, setDragging] = useState(false)
+
+  const onDragEnter = (event: React.DragEvent) => {
+    if (!carriesText(event.dataTransfer)) return
+    dragDepth.current += 1
+    setDragging(true)
+  }
+
+  // Only a drag that could hold a link makes this a drop target. Calling
+  // preventDefault on everything would claim dropped *files* too, and the
+  // handler has nothing to do with one — the browser's own behaviour (open it)
+  // is better than silently eating the drop.
+  const onDragOver = (event: React.DragEvent) => {
+    if (carriesText(event.dataTransfer)) event.preventDefault()
+  }
+
+  const onDragLeave = () => {
+    dragDepth.current = Math.max(0, dragDepth.current - 1)
+    if (dragDepth.current === 0) setDragging(false)
+  }
+
+  const onDrop = (event: React.DragEvent) => {
+    dragDepth.current = 0
+    setDragging(false)
+    const found = droppedLink(event.dataTransfer)
+    if (!found) return
+    event.preventDefault()
+    handleProcess(found)
+  }
+
   const handleVideoDownload = async () => {
     if (!state.downloadUrl) return
 
@@ -1232,6 +1317,45 @@ export function DownloaderApp() {
       dispatch({ type: 'SET_PROGRESS', payload: null })
     }
   }
+
+  /**
+   * Auto-save: a supporter's result starts downloading on its own.
+   *
+   * Driven by an effect rather than called at the resolve site, because there
+   * are four of those (the paste bar, the share-target hand-off, the recent
+   * list and a quality re-pick) and the one that got forgotten would silently
+   * withhold the feature. The card's own state is the single signal.
+   *
+   * `savedFor` is what keeps it to once per result. Without it the effect would
+   * re-fire on every render while the card is on screen, and a re-pick would
+   * re-arm it — which is right, because the visitor asked for a different file,
+   * and is why this tracks the URL rather than a boolean.
+   */
+  const autoSavedFor = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!autoSave) return
+    const target = state.originalUrl
+    if (!target || autoSavedFor.current === target) return
+    if (isResolvingOrDownloading(state)) return
+    const what = autoSaveTarget({
+      format,
+      hasVideo: !!state.downloadUrl,
+      hasAudio: !!state.audioUrl,
+      isGallery: (state.videoMetadata?.images?.length ?? 0) > 0,
+    })
+    if (!what) return
+    autoSavedFor.current = target
+    if (what === 'video') void handleVideoDownload()
+    else void handleAudioDownload()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSave, format, state])
+
+  // A re-pick asks for a different file from the same link, so auto-save has to
+  // be allowed to fire again for it.
+  useEffect(() => {
+    if (repicking) autoSavedFor.current = null
+  }, [repicking])
 
   const handleImageDownload = async () => {
     if (!state.videoMetadata?.images) return
@@ -1480,17 +1604,23 @@ export function DownloaderApp() {
   }, [keepInputAboveKeyboard])
 
   return (
-    <div ref={containerRef} className='mx-auto w-full max-w-2xl'>
+    <div
+      ref={containerRef}
+      className='mx-auto w-full max-w-2xl'
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       <PastDueBanner />
       {/* Paste bar — the hero action. Input + CTA share one focus-ring pill. */}
       <Surface
         ref={pasteBarRef}
         elevation='raised'
-        className={`flex flex-col gap-2 p-2 transition-colors duration-200 sm:flex-row ${
-          urlError
-            ? '[--surface-line:rgba(248,113,113,0.6)]'
-            : 'focus-within:[--surface-line:rgba(34,211,238,0.6)]'
-        }`}
+        className={`flex flex-col gap-2 p-2 transition-colors duration-200 sm:flex-row ${pasteBarAccent(
+          !!urlError,
+          dragging,
+        )}`}
       >
         <div className='relative flex min-w-0 flex-1 items-center'>
           <input
@@ -1601,9 +1731,20 @@ export function DownloaderApp() {
         />
       )}
 
+      {/* The one line under the bar does double duty while a link is being
+          dragged, rather than a drop overlay covering the card. The bar's own
+          accent ring is already the "this is where the link goes" signal (it is
+          the same ring focus uses), so a second full-screen layer would only
+          hide the thing it is pointing at. */}
       <p className='mt-3 text-center text-xs text-white/50'>
-        Videos, reels, shorts, MP3 audio &amp; photo carousels — paste several
-        links to grab them in one go
+        {dragging ? (
+          <span className='text-cyan-300/80'>{t('dropHint')}</span>
+        ) : (
+          <>
+            Videos, reels, shorts, MP3 audio &amp; photo carousels — paste
+            several links to grab them in one go
+          </>
+        )}
       </p>
 
       {/* Format + quality preferences — applied on the next resolve. Format

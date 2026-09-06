@@ -78,6 +78,7 @@ export type TKey =
   | 'importUnreadable'
   | 'importedLinks'
   | 'importNothingNew'
+  | 'dropHint'
 
 const en: Record<TKey, string> = {
   pastePlaceholder: 'Paste a video link.',
@@ -116,6 +117,7 @@ const en: Record<TKey, string> = {
   importUnreadable: 'Could not read that file.',
   importedLinks: 'Imported {n} link(s).',
   importNothingNew: 'Nothing new to import.',
+  dropHint: 'Drop the link to start',
 }
 
 const es: Partial<Record<TKey, string>> = {
@@ -155,6 +157,7 @@ const es: Partial<Record<TKey, string>> = {
   importUnreadable: 'No se pudo leer ese archivo.',
   importedLinks: 'Se importaron {n} enlace(s).',
   importNothingNew: 'No hay nada nuevo que importar.',
+  dropHint: 'Suelta el enlace para empezar',
 }
 
 const pt: Partial<Record<TKey, string>> = {
@@ -194,6 +197,7 @@ const pt: Partial<Record<TKey, string>> = {
   importUnreadable: 'Não foi possível ler esse arquivo.',
   importedLinks: '{n} link(s) importado(s).',
   importNothingNew: 'Nada de novo para importar.',
+  dropHint: 'Solte o link para começar',
 }
 
 const id: Partial<Record<TKey, string>> = {
@@ -233,6 +237,7 @@ const id: Partial<Record<TKey, string>> = {
   importUnreadable: 'Tidak dapat membaca berkas itu.',
   importedLinks: '{n} tautan diimpor.',
   importNothingNew: 'Tidak ada yang baru untuk diimpor.',
+  dropHint: 'Lepaskan tautan untuk mulai',
 }
 
 const ar: Partial<Record<TKey, string>> = {
@@ -272,6 +277,7 @@ const ar: Partial<Record<TKey, string>> = {
   importUnreadable: 'تعذّرت قراءة هذا الملف.',
   importedLinks: 'تم استيراد {n} رابط.',
   importNothingNew: 'لا جديد للاستيراد.',
+  dropHint: 'أفلت الرابط للبدء',
 }
 
 const DICTS: Record<Locale, Partial<Record<TKey, string>>> = {

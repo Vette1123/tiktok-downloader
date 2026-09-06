@@ -35,6 +35,7 @@ import {
   type Format,
   type Quality,
   persistPrefs,
+  setAutoSave,
   setFilenameTemplate,
   setFormat,
   setQuality,
@@ -635,6 +636,92 @@ function previewFilename(template: string | undefined, ext = 'mp4'): string {
  * not a benefit. Nothing here is disabled-and-teasing: the preview is real
  * either way, and only the controls that change it are behind the support.
  */
+/** Every placeholder, listed the way the box wants them written. */
+function tokenList(): string {
+  return FILENAME_TOKENS.map((token) => `{${token}}`).join(', ')
+}
+
+/** What the line under the template box says about what is in it. */
+function templateHint(template: string): string {
+  const unknown = unknownFilenameTokens(template)
+  if (unknown.length > 0) {
+    return `There is no {${unknown[0]}} — use ${tokenList()}.`
+  }
+  if (!isFilenameTemplate(template)) {
+    return 'A template needs at least one placeholder, or every file would be given the same name.'
+  }
+  return `Available: ${tokenList()}. The extension is always added for you.`
+}
+
+/**
+ * "Save it without asking me."
+ *
+ * Its own section rather than a row inside File names, because it is a
+ * different question: that one is what the file is called, this one is whether
+ * the visitor has to tap at all. Both are the same kind of benefit though —
+ * less standing over it, no wider reach — which is the only kind this list is
+ * allowed to hold. See config/pro.ts.
+ */
+function AutoSaveSection() {
+  const tier = useTier()
+  const prefs = usePrefs()
+  const isPro = tier === 'pro'
+  const on = prefs.autoSave === true
+
+  function toggle(next: boolean): void {
+    setAutoSave(next)
+    void persistPrefs({ ...prefs, autoSave: next || undefined })
+  }
+
+  return (
+    <Surface radius='3xl' className='animate-card-enter p-5 sm:p-6'>
+      <div className='flex flex-wrap items-baseline justify-between gap-2'>
+        <h2 className='text-lg font-semibold text-white'>Saving</h2>
+        {!isPro && (
+          <span className='rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 text-[11px] font-medium text-cyan-200'>
+            Supporters
+          </span>
+        )}
+      </div>
+
+      {isPro ? (
+        <>
+          <div className='mt-3 flex items-center gap-3'>
+            <input
+              type='checkbox'
+              id='autoSave'
+              checked={on}
+              onChange={(e) => toggle(e.target.checked)}
+              className='h-4 w-4 rounded border-white/30 bg-white/10 accent-cyan-400 focus:ring-2 focus:ring-cyan-400'
+            />
+            <label htmlFor='autoSave' className='text-sm text-white'>
+              Start the download as soon as a link resolves
+            </label>
+          </div>
+          <p className='mt-2 text-xs text-white/45'>
+            {on
+              ? 'Paste a link and the file is already saving. Carousels still wait for you to pick.'
+              : 'Off: a resolved link waits on the card until you tap Download.'}
+          </p>
+        </>
+      ) : (
+        <>
+          <p className='mt-1 text-sm text-white/55'>
+            Paste a link and let the file save itself, with no second tap.
+            Supporters can switch this on.
+          </p>
+          <Link
+            href='/pro'
+            className='mt-4 inline-flex text-sm font-medium text-cyan-300 underline-offset-4 transition-colors hover:text-cyan-200 hover:underline'
+          >
+            See what supporting gets you →
+          </Link>
+        </>
+      )}
+    </Surface>
+  )
+}
+
 function FilenamesSection() {
   const tier = useTier()
   const prefs = usePrefs()
@@ -647,7 +734,6 @@ function FilenamesSection() {
   // While untouched, follow the stored value — it can change under us when a
   // sign-in adopts the account's copy.
   const shown = touched ? draft : active
-  const unknown = unknownFilenameTokens(shown)
   const valid = isFilenameTemplate(shown)
 
   function apply(next: string): void {
@@ -719,11 +805,7 @@ function FilenamesSection() {
           </label>
 
           <p role='status' className='text-xs text-white/45'>
-            {unknown.length > 0
-              ? `There is no {${unknown[0]}} — use ${FILENAME_TOKENS.map((t) => `{${t}}`).join(', ')}.`
-              : valid
-                ? `Available: ${FILENAME_TOKENS.map((t) => `{${t}}`).join(', ')}. The extension is always added for you.`
-                : 'A template needs at least one placeholder, or every file would be given the same name.'}
+            {templateHint(shown)}
           </p>
         </div>
       )}
@@ -1131,6 +1213,7 @@ export function AccountPanel() {
       )}
       <PreferencesSection />
       <FilenamesSection />
+      <AutoSaveSection />
       <AccountSection
         identity={{
           // The cache covers all three while the refresh is in flight, so the

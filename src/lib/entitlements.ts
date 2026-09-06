@@ -51,6 +51,21 @@ export function useFilenameTemplate(): string | undefined {
   return tier === 'pro' ? filenameTemplate : undefined
 }
 
+/**
+ * Whether a resolved link should start saving on its own.
+ *
+ * Same shape and same reasoning as `useFilenameTemplate`: one place decides, so
+ * the answer cannot drift between the paste bar, the share-target hand-off and
+ * the recent list. Client-side, because the download itself is something a free
+ * visitor can already do with one more tap — what is being sold is the tap, not
+ * the file.
+ */
+export function useAutoSave(): boolean {
+  const tier = useTier()
+  const { autoSave } = usePrefs()
+  return tier === 'pro' && autoSave === true
+}
+
 export function useProToken(): string | null {
   // Subscribing to the account store is what re-renders this when a refresh
   // lands; the token itself is read imperatively because it is not part of the

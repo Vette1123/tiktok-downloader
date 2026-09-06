@@ -36,6 +36,12 @@ export interface Prefs {
    * so a template the builder would refuse never reaches storage.
    */
   filenameTemplate?: string
+  /**
+   * Whether a resolved link starts saving without a second tap, for supporters
+   * who turned it on. Absent means off, which is what everyone had before and
+   * what a free visitor keeps.
+   */
+  autoSave?: boolean
 }
 
 /**
@@ -78,12 +84,14 @@ export function normalisePrefs(value: unknown): Prefs | null {
   }
   if (typeof candidate !== 'object' || candidate === null) return null
 
-  const { quality, format, subtitleLang, filenameTemplate } = candidate as {
-    quality?: unknown
-    format?: unknown
-    subtitleLang?: unknown
-    filenameTemplate?: unknown
-  }
+  const { quality, format, subtitleLang, filenameTemplate, autoSave } =
+    candidate as {
+      quality?: unknown
+      format?: unknown
+      subtitleLang?: unknown
+      filenameTemplate?: unknown
+      autoSave?: unknown
+    }
   if (quality !== undefined && !isQuality(quality)) return null
   if (format !== undefined && !isFormat(format)) return null
 
@@ -100,6 +108,10 @@ export function normalisePrefs(value: unknown): Prefs | null {
   if (isFilenameTemplate(filenameTemplate)) {
     prefs.filenameTemplate = filenameTemplate.trim()
   }
+  // Only `true` is stored. Anything else, a literal `false` included, is the
+  // same state as never having set it, and leaving the key out keeps the
+  // stored object the shape it has always been for everyone who has not.
+  if (autoSave === true) prefs.autoSave = true
   return prefs
 }
 

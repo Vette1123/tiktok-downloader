@@ -40,6 +40,7 @@ const QUALITY_KEY = 'smd:quality'
 const FORMAT_KEY = 'smd:format'
 const SUBTITLE_LANG_KEY = 'smd:subtitle-lang'
 const FILENAME_TEMPLATE_KEY = 'smd:filename-template'
+const AUTO_SAVE_KEY = 'smd:auto-save'
 
 let cache: Prefs | null = null
 const listeners = new Set<() => void>()
@@ -50,11 +51,13 @@ function readStored(): Prefs {
     const format = window.localStorage.getItem(FORMAT_KEY)
     const subtitleLang = window.localStorage.getItem(SUBTITLE_LANG_KEY)
     const filenameTemplate = window.localStorage.getItem(FILENAME_TEMPLATE_KEY)
+    const autoSave = window.localStorage.getItem(AUTO_SAVE_KEY)
     return {
       quality: isQuality(quality) ? quality : DEFAULTS.quality,
       format: isFormat(format) ? format : DEFAULTS.format,
       ...(isSubtitleLang(subtitleLang) ? { subtitleLang } : {}),
       ...(isFilenameTemplate(filenameTemplate) ? { filenameTemplate } : {}),
+      ...(autoSave === '1' ? { autoSave: true as const } : {}),
     }
   } catch {
     // Storage blocked (private mode, cookie policy) — defaults are fine.
@@ -105,18 +108,45 @@ export function setFormat(format: Format): void {
   commit({ ...current, format })
 }
 
+/**
+ * Store a value, or remove the key when there is no value.
+ *
+ * Every optional preference needs this pair, and an absent key has to mean the
+ * same thing as never having set one — writing `""` or `"false"` would leave a
+ * stored value that reads back as garbage the next time the shape changes.
+ */
+function writeOrClear(key: string, value: string | undefined): void {
+  if (value) {
+    write(key, value)
+    return
+  }
+  try {
+    window.localStorage.removeItem(key)
+  } catch {
+    // Storage blocked; the in-memory snapshot is still correct for this tab.
+  }
+}
+
 export function setSubtitleLang(lang: string | undefined): void {
   const current = getSnapshot()
   if (current.subtitleLang === lang) return
-  if (lang) write(SUBTITLE_LANG_KEY, lang)
-  else {
-    try {
-      window.localStorage.removeItem(SUBTITLE_LANG_KEY)
-    } catch {
-      // ignore
-    }
-  }
+  writeOrClear(SUBTITLE_LANG_KEY, lang)
   commit({ ...current, subtitleLang: lang })
+}
+
+/**
+ * Turn "save it without asking me" on or off.
+ *
+ * Off is stored as an absent key rather than `'false'`, so a visitor who has
+ * never touched it and one who turned it back off are the same state — see
+ * `normalisePrefs`, which stores only `true` for the same reason.
+ */
+export function setAutoSave(on: boolean): void {
+  const current = getSnapshot()
+  const next = on || undefined
+  if (current.autoSave === next) return
+  writeOrClear(AUTO_SAVE_KEY, next ? '1' : undefined)
+  commit({ ...current, autoSave: next })
 }
 
 /**
@@ -131,14 +161,7 @@ export function setFilenameTemplate(template: string | undefined): void {
   const next =
     template && isFilenameTemplate(template) ? template.trim() : undefined
   if (current.filenameTemplate === next) return
-  if (next) write(FILENAME_TEMPLATE_KEY, next)
-  else {
-    try {
-      window.localStorage.removeItem(FILENAME_TEMPLATE_KEY)
-    } catch {
-      // ignore
-    }
-  }
+  writeOrClear(FILENAME_TEMPLATE_KEY, next)
   commit({ ...current, filenameTemplate: next })
 }
 
@@ -166,6 +189,9 @@ export function adoptServerPrefs(raw: unknown): void {
   }
   if (merged.filenameTemplate !== getSnapshot().filenameTemplate) {
     setFilenameTemplate(merged.filenameTemplate)
+  }
+  if (merged.autoSave !== getSnapshot().autoSave) {
+    setAutoSave(merged.autoSave === true)
   }
 }
 
