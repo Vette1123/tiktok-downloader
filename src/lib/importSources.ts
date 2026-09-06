@@ -87,6 +87,10 @@ export function detectImportSource(url: string): ImportSource | null {
     // A board is /<user>/<board>/; its RSS lives at <board>.rss.
     const segs = u.pathname.split('/').filter(Boolean)
     if (segs.length < 2) return null
+    // `/pin/<id>` is a single pin and has the same two-segment shape as a board.
+    // Treating it as one produced `pinterest.com/pin/<id>.rss`, which is not a
+    // feed and never was.
+    if (segs[0].toLowerCase() === 'pin') return null
     const feedUrl = `${u.origin}/${segs[0]}/${segs[1].replace(/\.rss$/, '')}.rss`
     return { kind: 'pinterest', feedUrl }
   }
@@ -103,6 +107,11 @@ export function detectImportSource(url: string): ImportSource | null {
       return { kind: 'vimeo', feedUrl: `${u.origin}/channels/${segs[1]}/videos/rss` }
     }
     const user = segs[0]
+    // An all-digit first segment is a video id, not a username: vimeo.com's own
+    // permalink for a clip is `vimeo.com/76979871`. Reading that as a user built
+    // a feed URL for a person who does not exist, and the importer then reported
+    // an empty channel for what was a perfectly good video.
+    if (/^\d+$/.test(user)) return null
     if (!/^[\w-]+$/.test(user) || ['settings', 'blog', 'help'].includes(user)) return null
     return { kind: 'vimeo', feedUrl: `${u.origin}/${user}/videos/rss` }
   }

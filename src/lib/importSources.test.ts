@@ -139,3 +139,26 @@ describe('parseRssItems', () => {
     expect(parseRssItems(RSS, { linkMustInclude: 'vimeo.com' })).toEqual([])
   })
 })
+
+/**
+ * Two shapes that look like a collection and are a single post.
+ *
+ * Found by reusing `detectImportSource` to tell a visitor "that link is a whole
+ * board, not one post" — it said that about a pin, and about a Vimeo video.
+ * Both had been building feed URLs that could never resolve (`/pin/<id>.rss`,
+ * `/76979871/videos/rss`), so the importer reported an empty collection for
+ * something that was a perfectly good single video.
+ */
+describe('posts that look like collections', () => {
+  it('does not read a pinterest pin as a board', () => {
+    expect(
+      detectImportSource('https://www.pinterest.com/pin/214343263495052387/'),
+    ).toBeNull()
+  })
+
+  it('does not read a vimeo video id as a username', () => {
+    expect(detectImportSource('https://vimeo.com/76979871')).toBeNull()
+    // A username that merely contains digits is still a username.
+    expect(detectImportSource('https://vimeo.com/user123456')?.kind).toBe('vimeo')
+  })
+})

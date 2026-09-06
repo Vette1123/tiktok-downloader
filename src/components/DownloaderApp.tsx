@@ -56,6 +56,7 @@ import { parseYouTubeId } from '@/lib/validator'
 import { SubtitlePicker } from '@/components/SubtitlePicker'
 import { ThumbnailButton } from '@/components/ThumbnailButton'
 import { ShareButton } from '@/components/ShareButton'
+import Link from 'next/link'
 import { CopyLinkButton } from '@/components/CopyLinkButton'
 import { friendlyError } from '@/lib/errorMessages'
 import { useLocale, useT } from '@/lib/i18nStore'
@@ -82,6 +83,7 @@ import {
   useFilenameTemplate,
   useProToken,
   useSaveBoth,
+  useTier,
 } from '@/lib/entitlements'
 import {
   addHistory,
@@ -100,6 +102,8 @@ import { autoSaveTarget } from '@/lib/autoSave'
 import { clipboardDecision } from '@/lib/clipboardWatch'
 import { savedAgo } from '@/lib/savedAgo'
 import { carriesText, droppedLink, isEditableTarget } from '@/lib/linkDrop'
+import { linkAdvice, type LinkAdvice } from '@/lib/linkAdvice'
+import { requestCollectionImport } from '@/lib/batchHandoff'
 
 // Pull the first http(s) URL out of arbitrary shared text. Android's share sheet
 // often hands a link inside `text` wrapped in a caption ("check this out <url>"),
@@ -349,6 +353,50 @@ function downloadManagerUrl(
   if (isAttachment) return directUrl
   if (outcome === 'too-big' && proxiedUrl) return proxiedUrl
   return null
+}
+
+/**
+ * What to offer somebody who pasted a playlist, board or subreddit.
+ *
+ * A supporter gets the thing itself: the link goes to the batch queue, which
+ * expands it into rows. Everybody else gets told that is what it would do,
+ * because this is the one moment where the feature and the need are the same
+ * shape — the visitor is holding a collection and the queue is the answer to
+ * holding a collection. Making that case anywhere else is advertising; making
+ * it here is help.
+ */
+function CollectionAction({
+  url,
+  onHandOff,
+}: {
+  url: string
+  onHandOff: () => void
+}) {
+  const tier = useTier()
+
+  if (tier !== 'pro') {
+    return (
+      <Link
+        href='/pro'
+        className='card-hover shrink-0 self-start rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-3 py-2 text-xs font-medium text-cyan-200 sm:self-auto'
+      >
+        Supporters can queue it →
+      </Link>
+    )
+  }
+
+  return (
+    <button
+      type='button'
+      onClick={() => {
+        requestCollectionImport(url)
+        onHandOff()
+      }}
+      className='btn-grad btn-press shrink-0 self-start rounded-xl px-3 py-2 text-xs font-semibold sm:self-auto'
+    >
+      Send it to the queue
+    </button>
+  )
 }
 
 /**
@@ -603,6 +651,15 @@ export function DownloaderApp() {
   const containerRef = useRef<HTMLDivElement>(null)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const [urlError, setUrlError] = useState<string | null>(null)
+  /**
+   * What a pasted link turned out to be, when it turned out not to be a post.
+   *
+   * Held apart from `urlError` because it is not an error: nothing failed, the
+   * link is fine, it just names a person or a playlist rather than a file. It
+   * gets its own panel with the one action that helps, which for a collection
+   * is the batch queue rather than a sentence.
+   */
+  const [pasteAdvice, setPasteAdvice] = useState<LinkAdvice | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const pasteBarRef = useRef<HTMLDivElement>(null)
   // Persisted in localStorage and mutated from several places, so it is read
@@ -844,6 +901,21 @@ export function DownloaderApp() {
       dispatch({ type: 'SET_URL', payload: overrideUrl })
     }
     setUrlError(null)
+
+    // A profile, a playlist or a site's front page cannot be a post, and that
+    // is knowable here without a single request. Sending one anyway spent four
+    // extractors to arrive at "Could not download this generic content. The
+    // post may be private, region-locked, unavailable, or not supported" —
+    // every clause of which is wrong for instagram.com/nasa, and which told
+    // somebody who pasted a playlist no while the batch queue was sitting
+    // underneath saying yes.
+    const advice = linkAdvice(target)
+    if (advice) {
+      setPasteAdvice(advice)
+      dispatch({ type: 'SET_URL', payload: target })
+      return
+    }
+    setPasteAdvice(null)
 
     dispatch({ type: 'SET_LOADING', payload: true })
     dispatch({ type: 'RESET_DOWNLOAD_STATE' })
@@ -1920,6 +1992,30 @@ export function DownloaderApp() {
           <span aria-hidden>⚠</span>
           {urlError}
         </p>
+      )}
+
+      {/* Not an error, so not red and not an alert: the link is fine, it just
+          names a person or a playlist. Neutral surface, the fact, and the one
+          action that helps — which for a collection is the queue itself, and
+          for a supporter is one tap away. */}
+      {pasteAdvice && (
+        <Surface
+          radius='xl'
+          className='animate-section-in mt-2 flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:gap-3'
+        >
+          <div className='min-w-0 flex-1'>
+            <p className='text-sm font-medium text-white/85'>
+              {pasteAdvice.title}
+            </p>
+            <p className='mt-0.5 text-xs text-white/55'>{pasteAdvice.hint}</p>
+          </div>
+          {pasteAdvice.kind === 'collection' && (
+            <CollectionAction
+              url={state.url}
+              onHandOff={() => setPasteAdvice(null)}
+            />
+          )}
+        </Surface>
       )}
 
       {/* The strongest moment to make the case, and it costs nothing to be

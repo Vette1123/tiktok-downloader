@@ -19,6 +19,7 @@ import {
 import { buildDownloadFilename } from '@/lib/filename'
 import { saveBlob } from '@/lib/blobSaver'
 import { resolve, type ResolveResult } from '@/lib/resolve'
+import { usePendingCollectionImport } from '@/lib/batchHandoff'
 import {
   useFilenameTemplate,
   useProToken,
@@ -232,6 +233,11 @@ export function BatchPanel() {
   const [isZipping, setIsZipping] = useState(false)
   const [note, setNote] = useState('')
   const [playlistUrl, setPlaylistUrl] = useState('')
+  // A collection link handed over from the paste bar; see lib/batchHandoff.
+  const pendingImport = usePendingCollectionImport()
+  // The last hand-off applied, so a re-render cannot overwrite typing.
+  const [seededFrom, setSeededFrom] = useState<string | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   const [isImporting, setIsImporting] = useState(false)
   // Resolve lanes. Three is the ceiling on purpose: every lane hammers the
   // same third-party extractors from one IP, and past three the failure rate
@@ -490,10 +496,40 @@ export function BatchPanel() {
     }
   }, [filenameTemplate, isZipping, items])
 
+  /**
+   * A collection pasted into the main bar arrives here.
+   *
+   * `linkAdvice` recognises a playlist, board or subreddit the moment it is
+   * pasted, and the useful answer to that is not an error message — it is this
+   * panel.
+   *
+   * Applied during render rather than in an effect. `setState` inside an effect
+   * is banned here (see lib/prefs.ts for what it costs), and this is the case
+   * React documents the pattern for: state derived from something outside that
+   * changed. `seededFrom` is what stops it re-applying over something the
+   * visitor has since typed.
+   */
+  if (pendingImport !== null && pendingImport !== seededFrom) {
+    setSeededFrom(pendingImport)
+    setPlaylistUrl(pendingImport)
+  }
+
+  // Scrolled into view because the panel is below the fold on most screens:
+  // filling a field nobody can see looks exactly like nothing happening. A DOM
+  // call, not state, so it belongs in an effect.
+  useEffect(() => {
+    if (!seededFrom) return
+    panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [seededFrom])
+
   if (tier !== 'pro') return null
 
   return (
-    <Surface elevation='raised' className='animate-section-in mt-4 p-4'>
+    <Surface
+      ref={panelRef}
+      elevation='raised'
+      className='animate-section-in mt-4 p-4'
+    >
       <div className='flex items-center justify-between gap-2'>
         <h2 className='text-sm font-semibold text-white/85'>Batch download</h2>
         <span className='text-xs text-white/50'>
