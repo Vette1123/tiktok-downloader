@@ -24,6 +24,15 @@ export interface VideoData {
   author: string
   description: string
   downloadUrl: string
+  /**
+   * Size of `downloadUrl` in bytes, when the source stated it.
+   *
+   * Read off the reachability probe's own `Content-Range`, so it costs no extra
+   * request — and absent whenever the source declined to say, which a tunnel
+   * usually does. The card shows nothing rather than a guess: a wrong size is
+   * worse than no size to somebody deciding on mobile data.
+   */
+  sizeBytes?: number
   images?: ImageData[]
   isPhotoCarousel?: boolean
   musicUrl?: string

@@ -104,6 +104,20 @@ function attachEstimatedLength(
 }
 
 /**
+ * The file extension for an image type, for the rare response the video proxy
+ * is honest about rather than relabelling. Unknown types get `jpg`, which is
+ * what a social CDN serves when it serves anything.
+ */
+export function extensionForImageType(contentType: string): string {
+  if (contentType.includes('png')) return 'png'
+  if (contentType.includes('webp')) return 'webp'
+  if (contentType.includes('gif')) return 'gif'
+  if (contentType.includes('avif')) return 'avif'
+  if (contentType.includes('heic')) return 'heic'
+  return 'jpg'
+}
+
+/**
  * A timestamped download name. Takes the clock as an argument because the
  * Worker entrypoint may run this at module-evaluation-adjacent times where a
  * caller wants a stable value in tests.
@@ -201,9 +215,26 @@ export async function handleVideoProxy(request: Request): Promise<Response> {
       }),
     )
 
+    // `video/mp4` is forced because most of these sources declare nothing
+    // useful (a tunnel says `application/octet-stream` for everything) and a
+    // browser will not build a player without a type it recognises.
+    //
+    // The one thing it must never do is force it onto a *picture*. An upstream
+    // that says `image/…` is believed and passed through with the extension to
+    // match: that combination is how a reel reached people as an `.mp4` that
+    // was a JPEG, and while the extractors now refuse such a stream twice over,
+    // this is the last place it could still be relabelled on the way out. See
+    // lessons/2026-09-06-the-tunnel-that-served-a-jpeg.md.
+    const upstreamType = (response.headers.get('content-type') ?? '')
+      .toLowerCase()
+      .split(';')[0]
+      .trim()
+    const isPicture = upstreamType.startsWith('image/')
     const responseHeaders = streamingHeaders(
-      'video/mp4',
-      timestampedName('social-video', 'mp4'),
+      isPicture ? upstreamType : 'video/mp4',
+      isPicture
+        ? timestampedName('social-image', extensionForImageType(upstreamType))
+        : timestampedName('social-video', 'mp4'),
     )
     if (ranged.contentLength) responseHeaders['Content-Length'] = ranged.contentLength
     if (ranged.contentRange) responseHeaders['Content-Range'] = ranged.contentRange

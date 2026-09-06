@@ -20,6 +20,8 @@ export interface VideoMetadata {
   title: string
   author: string
   duration: number
+  /** Bytes of the primary stream, when the source said. See types.ts. */
+  sizeBytes?: number
   thumbnail: string
   images?: ImageData[]
   platform?: SupportedPlatform

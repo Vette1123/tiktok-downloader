@@ -45,7 +45,7 @@ import { parseBatchInput } from '@/lib/batchQueue'
 import { recordResolve } from '@/lib/proSignals'
 import { nowMs, useIsIOSLike } from '@/lib/clientEnv'
 import { setFormat, setQuality, usePrefs } from '@/lib/prefs'
-import { buildDownloadFilename } from '@/lib/filename'
+import { buildDownloadFilename, formatBytes } from '@/lib/filename'
 import { parseYouTubeId } from '@/lib/validator'
 import { SubtitlePicker } from '@/components/SubtitlePicker'
 import { ThumbnailButton } from '@/components/ThumbnailButton'
@@ -1936,12 +1936,22 @@ export function DownloaderApp() {
                   <p className='text-white/70 text-xs md:text-sm mt-1'>
                     by {state.videoMetadata.author}
                   </p>
-                  {state.videoMetadata.duration > 0 && (
-                    <p className='text-white/50 text-xs mt-1'>
-                      {Math.floor(state.videoMetadata.duration / 60)}:
-                      {(state.videoMetadata.duration % 60)
-                        .toString()
-                        .padStart(2, '0')}
+                  {(state.videoMetadata.duration > 0 ||
+                    !!state.videoMetadata.sizeBytes) && (
+                    <p className='text-white/50 text-xs mt-1 tabular-nums'>
+                      {state.videoMetadata.duration > 0 && (
+                        <>
+                          {Math.floor(state.videoMetadata.duration / 60)}:
+                          {(state.videoMetadata.duration % 60)
+                            .toString()
+                            .padStart(2, '0')}
+                        </>
+                      )}
+                      {state.videoMetadata.duration > 0 &&
+                        !!state.videoMetadata.sizeBytes && (
+                          <span className='mx-1.5 text-white/25'>·</span>
+                        )}
+                      {formatBytes(state.videoMetadata.sizeBytes)}
                     </p>
                   )}
                   {state.originalUrl &&

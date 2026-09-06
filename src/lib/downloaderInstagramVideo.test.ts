@@ -49,7 +49,7 @@ type PrivateDownloader = {
   probeStream(
     url: string,
     opts?: { rejectHtml?: boolean; expect?: 'video' },
-  ): Promise<'ok' | 'unreachable' | 'wrong-type'>
+  ): Promise<{ verdict: 'ok' | 'unreachable' | 'wrong-type'; sizeBytes?: number }>
 }
 
 function priv(downloader: Downloader): PrivateDownloader {
@@ -213,36 +213,36 @@ describe('probing a candidate stream', () => {
   it('refuses JPEG bytes when a video was asked for', async () => {
     stubBytes([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46])
     expect(
-      await priv(new Downloader()).probeStream('https://cdn.example/x', {
+      (await priv(new Downloader()).probeStream('https://cdn.example/x', {
         expect: 'video',
-      }),
-    ).toBe('wrong-type')
+      })
+    ).verdict).toBe('wrong-type')
   })
 
   it('refuses PNG bytes too', async () => {
     stubBytes([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
     expect(
-      await priv(new Downloader()).probeStream('https://cdn.example/x', {
+      (await priv(new Downloader()).probeStream('https://cdn.example/x', {
         expect: 'video',
-      }),
-    ).toBe('wrong-type')
+      })
+    ).verdict).toBe('wrong-type')
   })
 
   it('accepts an MP4', async () => {
     // 'ftyp' at offset 4 — an ISO base media file.
     stubBytes([0, 0, 0, 0x20, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d])
     expect(
-      await priv(new Downloader()).probeStream('https://cdn.example/x', {
+      (await priv(new Downloader()).probeStream('https://cdn.example/x', {
         expect: 'video',
-      }),
-    ).toBe('ok')
+      })
+    ).verdict).toBe('ok')
   })
 
   it('accepts a picture when nothing said it had to be a video', async () => {
     stubBytes([0xff, 0xd8, 0xff, 0xe0])
-    expect(await priv(new Downloader()).probeStream('https://cdn.example/x')).toBe(
-      'ok',
-    )
+    expect(
+      (await priv(new Downloader()).probeStream('https://cdn.example/x')).verdict,
+    ).toBe('ok')
   })
 
   /**
@@ -255,10 +255,10 @@ describe('probing a candidate stream', () => {
       vi.fn(async () => new Response('', { status: 403 })),
     )
     expect(
-      await priv(new Downloader()).probeStream('https://cdn.example/x', {
+      (await priv(new Downloader()).probeStream('https://cdn.example/x', {
         expect: 'video',
-      }),
-    ).toBe('unreachable')
+      })
+    ).verdict).toBe('unreachable')
   })
 })
 
@@ -540,5 +540,51 @@ describe('the crawler view under a rate limit', () => {
     await priv(d).tryInstagramCrawlerView('DKcalTzoftf', 'https://www.instagram.com/reel/x/')
     await priv(d).tryInstagramCrawlerView('C8CaBfWs1mr', 'https://www.instagram.com/reel/y/')
     expect(fetchSpy).toHaveBeenCalledTimes(2)
+  })
+})
+
+/**
+ * The size is free — the probe already asks for `bytes=0-1024`, and a server
+ * answering a range request states the total. It was read past and dropped for
+ * as long as the probe has existed.
+ */
+describe('how big the stream turned out to be', () => {
+  const MP4 = [0, 0, 0, 0x20, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]
+
+  function stubRanged(headers: Record<string, string>, status = 206) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(new Uint8Array(MP4), { status, headers })),
+    )
+  }
+
+  it('reads the total off Content-Range', async () => {
+    stubRanged({ 'content-range': 'bytes 0-1024/12345678' })
+    const probe = await priv(new Downloader()).probeStream('https://cdn.example/x', {
+      expect: 'video',
+    })
+    expect(probe).toEqual({ verdict: 'ok', sizeBytes: 12345678 })
+  })
+
+  /**
+   * On a 206 the Content-Length describes the slice, not the file. Reporting
+   * "1 KB" for a 40 MB clip is worse than reporting nothing.
+   */
+  it('refuses a partial response’s Content-Length as the total', async () => {
+    stubRanged({ 'content-length': '1025' })
+    const probe = await priv(new Downloader()).probeStream('https://cdn.example/x')
+    expect(probe.sizeBytes).toBeUndefined()
+  })
+
+  it('takes Content-Length on a 200, where it is the whole file', async () => {
+    stubRanged({ 'content-length': '4096' }, 200)
+    const probe = await priv(new Downloader()).probeStream('https://cdn.example/x')
+    expect(probe.sizeBytes).toBe(4096)
+  })
+
+  it('says nothing when the server will not say', async () => {
+    stubRanged({ 'content-range': 'bytes 0-1024/*' })
+    const probe = await priv(new Downloader()).probeStream('https://cdn.example/x')
+    expect(probe.sizeBytes).toBeUndefined()
   })
 })

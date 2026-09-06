@@ -241,3 +241,29 @@ export function buildDownloadFilename({
 
   return `${indexed}.${cleanExt}`
 }
+
+/**
+ * A file size the way a person reads one: "12.4 MB", "870 KB".
+ *
+ * Base 1000, not 1024, because that is what every operating system's file
+ * browser shows and what a download manager counts down in — matching the
+ * pedantic definition would make our number disagree with the one the visitor
+ * sees a second later.
+ *
+ * Returns '' for absent or nonsense, so the card renders nothing rather than
+ * "0 B" or "NaN MB". A wrong size is worse than no size to somebody deciding
+ * whether to spend mobile data on it.
+ */
+export function formatBytes(bytes: number | undefined): string {
+  if (!bytes || !Number.isFinite(bytes) || bytes <= 0) return ''
+  if (bytes < 1000) return `${Math.round(bytes)} B`
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let value = bytes / 1000
+  let unit = 0
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000
+    unit += 1
+  }
+  // One decimal below 100, none above: "9.4 MB" is useful, "947.3 MB" is noise.
+  return `${value < 100 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`
+}

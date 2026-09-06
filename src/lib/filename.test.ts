@@ -3,6 +3,7 @@ import {
   DEFAULT_FILENAME_TEMPLATE,
   FILENAME_TEMPLATE_PRESETS,
   buildDownloadFilename,
+  formatBytes,
   isFilenameTemplate,
   slugify,
   unknownFilenameTokens,
@@ -243,5 +244,28 @@ describe('slugify', () => {
     expect(slugify('ancient space rocks and what they told us', 20)).toBe(
       'ancient-space-rocks',
     )
+  })
+})
+
+describe('formatBytes', () => {
+  it('reads the way a file browser does', () => {
+    expect(formatBytes(12_345_678)).toBe('12.3 MB')
+    expect(formatBytes(870_000)).toBe('870 KB')
+    expect(formatBytes(1_500_000_000)).toBe('1.5 GB')
+    expect(formatBytes(512)).toBe('512 B')
+  })
+
+  /** One decimal below 100, none above: "947.3 MB" is noise. */
+  it('drops the decimal once it stops carrying information', () => {
+    expect(formatBytes(947_300_000)).toBe('947 MB')
+    expect(formatBytes(9_400_000)).toBe('9.4 MB')
+  })
+
+  /** Nothing at all beats "0 B" or "NaN MB" on the card. */
+  it('says nothing rather than something wrong', () => {
+    expect(formatBytes(undefined)).toBe('')
+    expect(formatBytes(0)).toBe('')
+    expect(formatBytes(-5)).toBe('')
+    expect(formatBytes(Number.NaN)).toBe('')
   })
 })

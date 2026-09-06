@@ -318,6 +318,9 @@ export async function handleDownload(
         title: videoData.title,
         author: videoData.author,
         duration: videoData.duration,
+        // Only ever present when the source stated it; the card renders nothing
+        // rather than a guess.
+        sizeBytes: videoData.sizeBytes,
         thumbnail: proxyImage(videoData.thumbnail),
         platform,
         isPhotoCarousel: videoData.isPhotoCarousel ?? false,

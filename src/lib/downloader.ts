@@ -210,6 +210,43 @@ export function resetInstagramCrawlerCooldown(): void {
 type StreamVerdict = 'ok' | 'unreachable' | 'wrong-type'
 
 /**
+ * What a probe of a candidate stream found, and how big it turned out to be.
+ *
+ * The size is free. The probe already asks for `bytes=0-1024`, and a server
+ * answering a range request states the total in `Content-Range: bytes 0-1024/N`
+ * — a number the code read past and dropped for as long as the probe has
+ * existed. "How big is this" is the question a visitor on mobile data actually
+ * wants answered before they commit, so it is worth carrying the eight bytes.
+ *
+ * Absent when the source declines to say, which a tunnel usually does; the card
+ * shows nothing rather than a guess.
+ */
+interface StreamProbe {
+  verdict: StreamVerdict
+  sizeBytes?: number
+}
+
+/**
+ * Total stream length from a partial response.
+ *
+ * `Content-Range: bytes 0-1024/12345678` states the whole; `Content-Length` on
+ * a 200 is the whole by definition. A `*` total (a server that will not say)
+ * and a `Content-Length` on a 206 (which describes the *slice*, not the file)
+ * are both refused — reporting 1 KB for a 40 MB clip is worse than silence.
+ */
+function totalStreamBytes(response: Response): number | undefined {
+  const range = response.headers.get('content-range')
+  const total = range?.match(/\/(\d+)\s*$/)?.[1]
+  if (total) return Number(total)
+  if (response.status === 200) {
+    const length = Number(response.headers.get('content-length'))
+    if (length > 0) return length
+  }
+  const estimated = Number(response.headers.get('estimated-content-length'))
+  return estimated > 0 ? estimated : undefined
+}
+
+/**
  * Whether the first bytes of a stream are a still image.
  *
  * The signatures are the four a social CDN ever answers with — JPEG, PNG, GIF
@@ -1119,9 +1156,18 @@ export class Downloader {
   // A Pro request flips this order. The private instances are ours: not
   // rate-limited and not shared with the public internet, which is worth more
   // to someone who paid than the public instance's warm start is.
+  //
+  // `rue-cobalt.xenon.zone` was removed on 2026-09-06. It answers **530** —
+  // Cloudflare's "origin unreachable", i.e. the instance's own backend is down,
+  // not a network blip — to `GET /` and to every POST, from this machine and
+  // from the deployment. Production logged it on every Instagram resolve that
+  // reached cobalt. A dead entry is not redundancy: the cooldown benches it
+  // only *after* one doomed subrequest, and every new isolate pays that again.
+  // Re-add it, or anything else, only after probing from a Worker on
+  // Cloudflare's network — several instances answer datacenter egress with 403
+  // while working perfectly from a laptop.
   private static readonly publicCobaltInstances = [
     'https://co.otomir23.me/',
-    'https://rue-cobalt.xenon.zone/',
     'https://cobaltapi.cjs.nz/',
   ]
 
@@ -1618,7 +1664,8 @@ export class Downloader {
     if (
       media &&
       !media.isStream &&
-      (await this.probeStream(media.mediaUrl, { rejectHtml: true })) !== 'ok'
+      (await this.probeStream(media.mediaUrl, { rejectHtml: true })).verdict !==
+        'ok'
     ) {
       media = null
     }
@@ -2018,13 +2065,14 @@ export class Downloader {
           // Reject dead/region-locked stream URLs — and anything that turns out
           // not to be a video at all — so the UI never shows a broken player.
           // Fall through to the next extractor instead.
-          if (
-            (await this.probeStream(result.downloadUrl, { expect: 'video' })) !==
-            'ok'
-          ) {
+          const probe = await this.probeStream(result.downloadUrl, {
+            expect: 'video',
+          })
+          if (probe.verdict !== 'ok') {
             console.warn('YouTube candidate stream unusable, trying next...')
             continue
           }
+          result.sizeBytes ??= probe.sizeBytes
           // YouTube never yields a photo gallery.
           result.isPhotoCarousel = false
           result.images = undefined
@@ -2282,11 +2330,14 @@ export class Downloader {
           // player. And a Cobalt tunnel that failed to extract the clip streams
           // the cover JPEG perfectly happily, which is worse: it passes a
           // reachability check and downloads as a picture named .mp4.
-          const verdict = await this.probeStream(result.downloadUrl, {
+          const probe = await this.probeStream(result.downloadUrl, {
             expect: 'video',
           })
-          if (verdict === 'ok') return result
-          if (verdict === 'wrong-type') {
+          if (probe.verdict === 'ok') {
+            result.sizeBytes ??= probe.sizeBytes
+            return result
+          }
+          if (probe.verdict === 'wrong-type') {
             // Not a maybe. Never hold it as a fallback.
             console.warn(
               'Instagram method returned a still where a video was asked for, trying next...',
@@ -2561,7 +2612,7 @@ export class Downloader {
   private async probeStream(
     url: string,
     opts?: { rejectHtml?: boolean; expect?: 'video' },
-  ): Promise<StreamVerdict> {
+  ): Promise<StreamProbe> {
     // Native fetch rather than axios: axios's `responseType: 'stream'` hands
     // back a Node Readable, which its fetch adapter cannot produce and which
     // does not exist on workerd. A web ReadableStream works identically on both
@@ -2589,16 +2640,17 @@ export class Downloader {
       // An explicit Content-Length: 0 is the empty-tunnel signature — reject early.
       if (!statusOk || response.headers.get('content-length') === '0') {
         await response.body?.cancel()
-        return 'unreachable'
+        return { verdict: 'unreachable' }
       }
       if (
         (opts?.rejectHtml && isPage) ||
         (opts?.expect === 'video' && (isPage || contentType.startsWith('image/')))
       ) {
         await response.body?.cancel()
-        return 'wrong-type'
+        return { verdict: 'wrong-type' }
       }
-      if (!response.body) return 'unreachable'
+      const sizeBytes = totalStreamBytes(response)
+      if (!response.body) return { verdict: 'unreachable' }
 
       // Reachable on the first non-empty chunk; unreachable if the body ends
       // empty, errors, or stalls. One chunk is enough — the rest of the file is
@@ -2608,16 +2660,18 @@ export class Downloader {
       const reader = response.body.getReader()
       try {
         const { value, done } = await reader.read()
-        if (done || (value?.byteLength ?? 0) === 0) return 'unreachable'
-        if (opts?.expect === 'video' && looksLikeImageBytes(value)) {
-          return 'wrong-type'
+        if (done || (value?.byteLength ?? 0) === 0) {
+          return { verdict: 'unreachable' }
         }
-        return 'ok'
+        if (opts?.expect === 'video' && looksLikeImageBytes(value)) {
+          return { verdict: 'wrong-type' }
+        }
+        return { verdict: 'ok', sizeBytes }
       } finally {
         await reader.cancel().catch(() => {})
       }
     } catch {
-      return 'unreachable'
+      return { verdict: 'unreachable' }
     } finally {
       clearTimeout(timer)
     }
@@ -3013,9 +3067,9 @@ export class Downloader {
       altText?: string
     }>
 
-    const videoItem = mediaItems.find(
-      (m) => m.type === 'video' || m.type === 'gif',
-    )
+    const isVideo = (m: { type: string }) =>
+      m.type === 'video' || m.type === 'gif'
+    const videoItem = mediaItems.find(isVideo)
     const photoItems = mediaItems.filter((m) => m.type === 'image')
 
     if (!videoItem && photoItems.length === 0) {
@@ -3023,11 +3077,23 @@ export class Downloader {
     }
 
     const downloadUrl = videoItem?.url || ''
-    const images: ImageData[] = photoItems.map((img, i) => ({
-      id: `tw_img_${i}`,
-      url: img.url,
-      thumbnail: img.thumbnail_url || img.url,
-    }))
+    // Every attachment, in the order the tweet shows them. A tweet can carry
+    // four clips, and the gallery used to be built from the photos alone — so
+    // the first clip became `downloadUrl` and the other three were dropped with
+    // nothing anywhere saying so. Same defect as the Instagram carousel; the
+    // gallery carries video now, so it carries all of it.
+    const images: ImageData[] = mediaItems
+      .filter((m) => isVideo(m) || m.type === 'image')
+      .map((item, i) => ({
+        id: `tw_media_${i}`,
+        url: item.url,
+        thumbnail: item.thumbnail_url || item.url,
+        kind: isVideo(item) ? ('video' as const) : ('image' as const),
+      }))
+    // One clip on its own is not a gallery — it is the tweet, and
+    // `downloadUrl` already carries it.
+    const gallery =
+      images.length === 1 && images[0].kind === 'video' ? [] : images
 
     return {
       id: tweetId,
@@ -3040,8 +3106,8 @@ export class Downloader {
       author: data.user_name || username,
       description: data.text || '',
       downloadUrl,
-      images: images.length > 0 ? images : undefined,
-      isPhotoCarousel: images.length > 0 && !videoItem,
+      images: gallery.length > 0 ? gallery : undefined,
+      isPhotoCarousel: photoItems.length > 0 && !videoItem,
     }
   }
 
