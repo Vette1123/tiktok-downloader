@@ -1,28 +1,38 @@
 'use client'
 
-import { GooglePlayIcon } from '@/components/icons'
+import { AppsIcon } from '@/components/icons'
 import { LinkCard } from '@/components/LinkCard'
-import { openOnPlayStore, PLAY_APPS, PlayApp } from '@/lib/apps'
+import {
+  openStoreListing,
+  PLAY_APPS,
+  PlayApp,
+  storeHref,
+  storesLabel,
+} from '@/lib/apps'
 
 // Attention-grabbing hero card promoting one of our apps. Same shell as the
-// dev-link cards (LinkCard owns the geometry) with a Google-Play-green sheen,
-// and prefers the native Play Store app — falling back to the web listing.
+// dev-link cards (LinkCard owns the geometry), and it opens the store the
+// reader can actually install from.
+//
+// The sheen was Google-Play green. Two of the three apps are on the App Store
+// too, so a green Play-coloured card is the same false claim the Play icon was;
+// it is now the site's own cyan/sky, which is what every other accent here uses.
 export function PlayAppPromoCard({ app }: { app: PlayApp }) {
   return (
     <LinkCard
-      href={app.playStoreUrl}
+      href={storeHref(app)}
       label={app.name}
-      Icon={GooglePlayIcon}
+      Icon={AppsIcon}
       iconHoverClass='group-hover:text-white'
-      title={`${app.name} — an app made by us, on Google Play`}
+      title={`${app.name} — an app made by us, on ${storesLabel(app)}`}
       onClick={(e: React.MouseEvent) => {
         e.preventDefault()
-        openOnPlayStore(app)
+        openStoreListing(app)
       }}
       className='overflow-hidden'
     >
       <span
-        className='absolute inset-0 bg-gradient-to-r from-emerald-500/80 to-green-400/80 opacity-0 transition-opacity duration-300 group-hover:opacity-100'
+        className='absolute inset-0 bg-gradient-to-r from-cyan-500/80 to-sky-400/80 opacity-0 transition-opacity duration-300 group-hover:opacity-100'
         aria-hidden
       />
       <span

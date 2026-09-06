@@ -9,7 +9,7 @@ const devLinks = [
 ] as const
 
 /**
- * Hero row: who built this, plus our apps on Google Play. Rendered identically
+ * Hero row: who built this, plus our own apps. Rendered identically
  * on the homepage and every platform landing page — it lived in both files
  * before, which is how the two Play cards ended up clipped on phones in one
  * place and had to be fixed in two.

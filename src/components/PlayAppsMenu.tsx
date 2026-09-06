@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDownIcon, GooglePlayIcon } from '@/components/icons'
+import { AppsIcon, ChevronDownIcon } from '@/components/icons'
 import { Surface } from '@/components/Surface'
-import { openOnPlayStore, PLAY_APPS } from '@/lib/apps'
+import { openStoreListing, PLAY_APPS, storeHref, storesLabel } from '@/lib/apps'
 
 /**
  * The footer's "Our apps" menu — the same popover the streaming site's header
@@ -51,7 +51,7 @@ export function PlayAppsMenu() {
         aria-haspopup='menu'
         className='inline-flex items-center gap-1.5 whitespace-nowrap text-white/70 transition-colors hover:text-white'
       >
-        <GooglePlayIcon className='h-4 w-4' />
+        <AppsIcon className='h-4 w-4' />
         Our apps
         <ChevronDownIcon
           className={`h-3.5 w-3.5 text-white/40 transition-transform duration-200 ${
@@ -72,32 +72,35 @@ export function PlayAppsMenu() {
         <div className='animate-section-in absolute bottom-full left-1/2 z-30 mb-2 w-72 -translate-x-1/2 sm:right-0 sm:left-auto sm:translate-x-0'>
           <Surface role='menu' radius='xl' elevation='raised' className='p-2 shadow-2xl'>
             <p className='px-2 pt-1 pb-2 text-xs font-medium text-white/45'>
-              Our apps on Google Play
+              Our apps
             </p>
             {PLAY_APPS.map((app) => (
               <a
                 key={app.androidPackage}
                 role='menuitem'
-                href={app.playStoreUrl}
+                href={storeHref(app)}
                 target='_blank'
                 rel='noopener noreferrer'
                 onClick={(e) => {
                   e.preventDefault()
                   setOpen(false)
-                  openOnPlayStore(app)
+                  openStoreListing(app)
                 }}
                 // .card-hover, not a translucent white film: rows in a panel are
                 // exactly what that primitive is for, and hoverStyles.test.ts
                 // fails the ad-hoc version.
                 className='card-hover flex items-start gap-3 rounded-lg px-2 py-2 focus-visible:ring-1 focus-visible:ring-cyan-400/40 focus-visible:outline-none'
               >
-                <GooglePlayIcon className='mt-0.5 h-4 w-4 shrink-0 text-white/70' />
+                <AppsIcon className='mt-0.5 h-4 w-4 shrink-0 text-white/70' />
                 <span className='min-w-0'>
                   <span className='block text-sm font-semibold text-white'>
                     {app.name}
                   </span>
                   <span className='block text-xs leading-snug text-white/55'>
                     {app.tagline}
+                  </span>
+                  <span className='block text-[11px] leading-snug text-white/35'>
+                    {storesLabel(app)}
                   </span>
                 </span>
               </a>
