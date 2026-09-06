@@ -3796,12 +3796,27 @@ export class Downloader {
         validateStatus: () => true,
       },
     )
-    if (response.status !== 200) return null
+    // Four different silences, and telling them apart from the outside is
+    // impossible — which is exactly the trap the 2026-08-13 lesson names about
+    // a `doc_id` that started failing with a 200. One line, once, per failure.
     const html = typeof response.data === 'string' ? response.data : ''
-    if (!html) return null
+    if (response.status !== 200 || !html) {
+      console.warn(
+        `instagram crawler view: ${shortcode} answered ${response.status}, ${html.length} chars`,
+      )
+      return null
+    }
 
     const found = parseInstagramCrawlerMedia(html, mediaId)
-    if (!found?.videoUrl) return null
+    if (!found?.videoUrl) {
+      console.warn(
+        `instagram crawler view: no clip for ${shortcode} in ${html.length} chars`,
+        `anchor ${html.includes(`"pk":"${mediaId}"`) ? 'found' : 'MISSING'}`,
+        `video_versions ${html.includes('video_versions') ? 'present' : 'absent'}`,
+        found?.poster ? 'poster only' : 'nothing',
+      )
+      return null
+    }
 
     const caption = decodeEntities(metaContent(html, 'og:title') || '')
     return {
