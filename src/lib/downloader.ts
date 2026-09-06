@@ -2308,23 +2308,39 @@ export class Downloader {
     let expectsVideo =
       instagramLinkIsVideo(url) || instagramLinkIsVideo(resolvedUrl)
 
-    const methods: Array<() => Promise<VideoData | null>> = [
-      async () => {
-        if (!shortcode) return null
-        const embed = await this.tryInstagramEmbed(shortcode, url)
-        expectsVideo = expectsVideo || embed.isVideo
-        return embed.data
+    // Named, because when this chain ends with a cover image for a reel the
+    // only useful question is which of the four refused and how — and from
+    // outside a deployed isolate every one of those failures looks identical.
+    // Same reasoning as the Innertube log line; see youtubeInnertube.ts.
+    const methods: Array<{ name: string; run: () => Promise<VideoData | null> }> = [
+      {
+        name: 'embed',
+        run: async () => {
+          if (!shortcode) return null
+          const embed = await this.tryInstagramEmbed(shortcode, url)
+          expectsVideo = expectsVideo || embed.isVideo
+          return embed.data
+        },
       },
-      () =>
-        shortcode && expectsVideo
-          ? this.tryInstagramCrawlerView(shortcode, url)
-          : Promise.resolve(null),
-      () =>
-        shortcode
-          ? this.tryInstagramMediaInfo(shortcode, url)
-          : Promise.resolve(null),
-      () => this.tryCobaltInstances(resolvedUrl),
+      {
+        name: 'crawler',
+        run: () =>
+          shortcode && expectsVideo
+            ? this.tryInstagramCrawlerView(shortcode, url)
+            : Promise.resolve(null),
+      },
+      {
+        name: 'media-info',
+        run: () =>
+          shortcode
+            ? this.tryInstagramMediaInfo(shortcode, url)
+            : Promise.resolve(null),
+      },
+      { name: 'cobalt', run: () => this.tryCobaltInstances(resolvedUrl) },
     ]
+
+    /** One word per method, for the give-up line at the bottom. */
+    const outcomes: string[] = []
 
     // Hold the first video result whose stream we couldn't confirm reachable, so
     // that if no method yields a verified-playable stream we still return
@@ -2336,8 +2352,11 @@ export class Downloader {
 
     for (const method of methods) {
       try {
-        const result = await method()
-        if (!result) continue
+        const result = await method.run()
+        if (!result) {
+          outcomes.push(`${method.name}:nothing`)
+          continue
+        }
         // IG never uses the TikTok-style slideshow render path.
         result.isPhotoCarousel = false
 
@@ -2358,35 +2377,45 @@ export class Downloader {
           }
           if (probe.verdict === 'wrong-type') {
             // Not a maybe. Never hold it as a fallback.
-            console.warn(
-              'Instagram method returned a still where a video was asked for, trying next...',
-            )
+            outcomes.push(`${method.name}:not-a-video`)
             continue
           }
           if (!unverifiedVideo) unverifiedVideo = result
-          console.warn(
-            'Instagram video stream unreachable from here, trying next method...',
-          )
+          outcomes.push(`${method.name}:unreachable`)
           continue
         }
 
         if ((result.images?.length ?? 0) > 0) {
           if (!expectsVideo) return result
+          outcomes.push(`${method.name}:stills(${result.images?.length})`)
           stillsOnly ??= result
+          continue
         }
+        outcomes.push(`${method.name}:empty`)
       } catch (e) {
-        console.warn('Instagram method failed, trying next...', e)
+        outcomes.push(
+          `${method.name}:threw(${e instanceof Error ? e.message.slice(0, 40) : '?'})`,
+        )
       }
     }
 
     // No method produced a verified-reachable stream. If we did extract a video
     // URL (just couldn't confirm it here), return it anyway — it may still play
     // for the client, and this is no worse than the prior behavior.
-    if (unverifiedVideo) return unverifiedVideo
+    if (unverifiedVideo) {
+      console.warn(`Instagram fell back to an unverified stream: ${outcomes.join(' ')}`)
+      return unverifiedVideo
+    }
     // A gallery for a video link is the last thing tried, never the first: it
     // is the poster, and handing it over as though it were the clip is the
-    // failure this whole chain was rebuilt to stop.
-    if (stillsOnly) return stillsOnly
+    // failure this whole chain was rebuilt to stop. Handing it over at all is
+    // still a degradation, and a loud one — a visitor asked for a reel and is
+    // getting a picture — so it says which four attempts led here rather than
+    // returning quietly and leaving the next person to guess.
+    if (stillsOnly) {
+      console.warn(`Instagram gave a reel its cover image: ${outcomes.join(' ')}`)
+      return stillsOnly
+    }
 
     // A credentialed request whose session is locked reached here as if it were
     // anonymous. Say so, rather than describing this post as the unusual one:
