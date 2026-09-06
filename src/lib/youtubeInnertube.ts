@@ -211,10 +211,21 @@ function pickAudio(data: InnertubePlayerResponse): InnertubeFormat | undefined {
   return preferred.sort(byBitrateDesc)[0]
 }
 
+/**
+ * How one client answered, in a few characters, for the log line below.
+ *
+ * `LOGIN_REQUIRED` and a `403` mean completely different things — "Google
+ * thinks this address is a bot" versus "Google is rate-limiting this address" —
+ * and from outside a deployed isolate the two are indistinguishable. Both look
+ * like "YouTube doesn't work". This is what tells them apart in `wrangler tail`.
+ */
+type ClientOutcome = string
+
 /** One player call as one client. Null means "this client cannot serve it". */
 async function askClient(
   client: InnertubeClient,
   videoId: string,
+  outcomes: ClientOutcome[],
 ): Promise<InnertubePlayerResponse | null> {
   try {
     const response = await http.post<InnertubePlayerResponse>(
@@ -237,11 +248,19 @@ async function askClient(
         validateStatus: () => true,
       },
     )
-    if (response.status !== 200) return null
+    if (response.status !== 200) {
+      outcomes.push(`${client.name}:${response.status}`)
+      return null
+    }
     const data = response.data
-    if (data?.playabilityStatus?.status !== 'OK') return null
+    const status = data?.playabilityStatus?.status
+    if (status !== 'OK') {
+      outcomes.push(`${client.name}:${status ?? 'no-status'}`)
+      return null
+    }
     return data
-  } catch {
+  } catch (error) {
+    outcomes.push(`${client.name}:threw(${(error as Error)?.message ?? '?'})`)
     return null
   }
 }
@@ -263,10 +282,18 @@ async function askClient(
 export async function fetchPlayerResponse(
   videoId: string,
 ): Promise<InnertubePlayerResponse | null> {
+  const outcomes: ClientOutcome[] = []
   for (const client of CLIENTS) {
-    const data = await askClient(client, videoId)
+    const data = await askClient(client, videoId, outcomes)
     if (data) return data
   }
+  // Only when EVERY client failed, so a working resolve logs nothing. Without
+  // it this function is a black box: it swallows a bot-block, a rate limit, a
+  // private video and a timeout into the same `null`, and the visitor-facing
+  // result for all four is a YouTube embed with no download — which is exactly
+  // the shape that hid a total extraction failure until somebody pasted a link
+  // and looked. See lessons/2026-09-07-youtube-was-answering-with-an-embed.md.
+  console.warn(`Innertube gave up on ${videoId}: ${outcomes.join(' ')}`)
   return null
 }
 
