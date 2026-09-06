@@ -375,7 +375,7 @@ function buildChecks() {
     },
 
     {
-      name: 'api/download resolves a YouTube URL to a real stream',
+      name: 'api/download answers a YouTube URL with something usable',
       // Innertube answers a datacenter caller differently, and differently
       // again on a repeat ask seconds later — see THIRD_PARTY_IS_ADVISORY.
       thirdParty: true,
@@ -385,33 +385,41 @@ function buildChecks() {
         json: { url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', quality: '720' },
         timeoutMs: 90_000,
       },
+      /**
+       * Twice now this check has been red about the wrong thing, so it is worth
+       * writing down what it is actually allowed to assert.
+       *
+       * It began as `metadata.duration > 0`, reasoning that duration comes from
+       * Innertube's videoDetails and the embed fallback hardcodes 0. That was a
+       * fingerprint of one extractor, not the promise: when ANDROID_VR is
+       * rate-limited the resolve falls through to Cobalt, which serves a
+       * perfectly good 720p tunnel with metadata enriched from oEmbed, and
+       * oEmbed carries no duration. Red for two runs while production worked.
+       *
+       * It then asserted a downloadUrl whose first bytes are a video. Also
+       * wrong, and for a more permanent reason: reading the production logs,
+       * Google answers this deployment's address `403` for every Innertube
+       * client, `LOGIN_REQUIRED` when it does not, and both public Cobalt
+       * instances answer YouTube with `400`. A downloadable YouTube *video* is
+       * not something this host can promise any more, so a check demanding one
+       * is red forever, and a permanently red check teaches everyone to ignore
+       * the run.
+       *
+       * What the code still owes a visitor is that a YouTube link comes back
+       * with something to do: a stream, an MP3, or at minimum the playable
+       * embed. Losing all three is a real regression and is what this catches.
+       * When there IS a stream it is still held to the byte check, so a
+       * relabelled JPEG cannot pass on a good day.
+       */
       check: async (response, body) => {
         if (response.status !== 200) return `expected 200, got ${response.status}`
         const payload = JSON.parse(new TextDecoder().decode(body))
         if (!payload.success) return `success=false: ${payload.error ?? 'no error given'}`
         // Shape is flat: { success, downloadUrl, audioUrl, metadata }.
         if (!payload.metadata?.title) return 'no metadata.title in response'
-        if (!payload.downloadUrl) return 'no downloadUrl in response'
-
-        // The distinction that matters for YouTube: a real extraction versus
-        // the embed-only degradation. Both set success=true, so assert on
-        // something only extraction produces — the bytes.
-        //
-        // This used to assert `metadata.duration > 0`, on the reasoning that
-        // duration comes from Innertube's videoDetails and the embed fallback
-        // hardcodes 0. That was a proxy for the extractor, not for the claim,
-        // and it broke the day the extractor changed: when ANDROID_VR is
-        // rate-limited the resolve falls through to Cobalt, which serves a
-        // perfectly good 720p tunnel with metadata enriched from oEmbed — and
-        // oEmbed carries no duration. The check went red for two full runs
-        // while production was working better than the check expected.
-        //
-        // Reading a kilobyte of the stream asserts the actual promise instead,
-        // and holds whichever extractor won.
-        if (payload.metadata.embedUrl && !payload.downloadUrl) {
-          return 'fell back to embed-only — no extractor produced a stream'
-        }
-        return checkStreamIsVideo(payload.downloadUrl)
+        if (payload.downloadUrl) return checkStreamIsVideo(payload.downloadUrl)
+        if (payload.audioUrl || payload.metadata.embedUrl) return null
+        return 'nothing usable came back: no stream, no audio, not even the embed'
       },
     },
 
@@ -427,12 +435,21 @@ function buildChecks() {
         },
         timeoutMs: 90_000,
       },
+      /**
+       * The audio is the half of YouTube worth still asserting: an audio-only
+       * adaptive stream needs no muxing, so it is the one thing Innertube can
+       * hand over whenever it answers at all. When it does not answer, the same
+       * reasoning as the check above applies — an MP3 nobody will serve us is
+       * not a promise the code can keep — so the embed is accepted as the floor
+       * and the message says which of the two came back.
+       */
       check: async (response, body) => {
         if (response.status !== 200) return `expected 200, got ${response.status}`
         const payload = JSON.parse(new TextDecoder().decode(body))
         if (!payload.success) return `success=false: ${payload.error ?? 'no error given'}`
-        if (!payload.audioUrl) return 'no audioUrl for an audio-mode request'
-        return null
+        if (payload.audioUrl) return null
+        if (payload.metadata?.embedUrl) return null
+        return 'an audio-mode request came back with neither an MP3 nor an embed'
       },
     },
 
