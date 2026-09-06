@@ -1,8 +1,14 @@
+/**
+ * One gallery slide as the client sees it. `kind` mirrors the server's
+ * `types.ts` shape: a carousel can hold clips as well as stills, and absent
+ * means image — which is what every entry meant before it could hold one.
+ */
 export interface ImageData {
   id: string
   url: string
   thumbnail: string
   selected: boolean
+  kind?: 'image' | 'video'
 }
 
 // Single source of truth lives in validator.ts; re-exported here so existing
@@ -281,8 +287,22 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       }
 
     case 'SET_DOWNLOAD_SUCCESS': {
-      const meta = action.payload.metadata
-      const hasImages = !!meta.images && meta.images.length > 0
+      const payloadMeta = action.payload.metadata
+      const hasImages = !!payloadMeta.images && payloadMeta.images.length > 0
+      // Everything in a carousel starts selected. The gallery opens by itself
+      // on a post that has one, and it used to open with nothing ticked — so
+      // its only action read "Download selected (0)" and was disabled, and
+      // every visitor had to find the "All" button before the panel did
+      // anything. Somebody who pasted a carousel wants the carousel.
+      const meta = hasImages
+        ? {
+            ...payloadMeta,
+            images: payloadMeta.images?.map((img) => ({
+              ...img,
+              selected: true,
+            })),
+          }
+        : payloadMeta
       return {
         ...state,
         message: 'Content processed successfully!',

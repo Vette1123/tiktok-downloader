@@ -663,9 +663,54 @@ const PLATFORM_PROBES = [
   // The logged-out Instagram wall is the thing most likely to close. This is a
   // carousel on an account that will outlive the site.
   { platform: 'instagram', url: 'https://www.instagram.com/p/CmUv48DLvxd/' },
-  { platform: 'facebook', url: 'https://www.facebook.com/reel/1536569814605331/' },
+  // A reel, and the only probe here that asserts the bytes are a video. The
+  // carousel above passes on `images.length` alone, so for two years nothing in
+  // this repo ever checked that an Instagram VIDEO resolved to a video — which
+  // is how a resolve that answered reels with the post's cover JPEG went
+  // unnoticed. This reel is Instagram's own most-viewed-reels list; its embed
+  // page ships no `video_url`, so it also exercises the crawler-view extractor.
+  {
+    platform: 'instagram',
+    url: 'https://www.instagram.com/reel/DKcalTzoftf/',
+    expectVideo: true,
+  },
+  {
+    platform: 'facebook',
+    url: 'https://www.facebook.com/reel/1536569814605331/',
+    expectVideo: true,
+  },
   { platform: 'twitter', url: 'https://x.com/NASA/status/2094078415376658588' },
 ]
+
+/**
+ * The first bytes of a file say what it is; a content type says what somebody
+ * claimed. `/api/video` forces `video/mp4` onto whatever it proxies, so its
+ * header can never be the test — that is exactly how a JPEG shipped as a reel
+ * for who knows how long. ISO base media puts `ftyp` at offset 4; WebM/Matroska
+ * opens with the EBML magic.
+ */
+function looksLikeVideoBytes(bytes) {
+  if (bytes.length >= 8) {
+    const brand = String.fromCharCode(...bytes.slice(4, 8))
+    if (brand === 'ftyp') return true
+  }
+  if (bytes.length >= 4) {
+    const [a, b, c, d] = bytes
+    if (a === 0x1a && b === 0x45 && c === 0xdf && d === 0xa3) return true
+  }
+  return false
+}
+
+function describeBytes(bytes) {
+  const [a, b, c, d] = bytes
+  if (a === 0xff && b === 0xd8 && c === 0xff) return 'a JPEG'
+  if (a === 0x89 && b === 0x50 && c === 0x4e && d === 0x47) return 'a PNG'
+  if (a === 0x47 && b === 0x49 && c === 0x46) return 'a GIF'
+  if (a === 0x3c) return 'an HTML page'
+  return `bytes starting ${[...bytes.slice(0, 8)]
+    .map((x) => x.toString(16).padStart(2, '0'))
+    .join(' ')}`
+}
 
 /**
  * A probe is not "success: true".
@@ -675,10 +720,19 @@ const PLATFORM_PROBES = [
  * that as a working platform — the mistake the 2026-08-13 lesson is named
  * after. So this asserts the platform it was routed to, a title, and at least
  * one thing a visitor could actually save.
+ *
+ * And for a probe whose URL names a video, it PULLS THE FIRST BYTES. A resolve
+ * that answers a reel with the post's cover image satisfies every check above:
+ * the platform is right, the title is right, `downloadUrl` is populated, and
+ * the file is a picture. That shipped, and nothing here noticed, because no
+ * check had ever looked at what came down the wire. See
+ * lessons/2026-09-06-the-tunnel-that-served-a-jpeg.md.
  */
 function platformProbeCheck(probe) {
   return {
-    name: `platform ${probe.platform} resolves a live public post`,
+    name: `platform ${probe.platform} resolves a live public ${
+      probe.expectVideo ? 'video' : 'post'
+    }`,
     thirdParty: true,
     request: {
       pathname: '/api/download',
@@ -698,6 +752,27 @@ function platformProbeCheck(probe) {
       const media =
         payload.downloadUrl || payload.audioUrl || meta.embedUrl || (meta.images ?? []).length
       if (!media) return 'success with nothing to download: no downloadUrl, embedUrl or images'
+
+      if (!probe.expectVideo) return null
+      if (!payload.downloadUrl) {
+        return `a video link resolved with no video: ${
+          (meta.images ?? []).length
+        } image(s) and no downloadUrl`
+      }
+      const target = payload.downloadUrl.startsWith('/')
+        ? `${BASE}${payload.downloadUrl}`
+        : payload.downloadUrl
+      const head = await fetch(target, {
+        headers: { Range: 'bytes=0-1023' },
+        signal: AbortSignal.timeout(60_000),
+      })
+      if (head.status !== 200 && head.status !== 206) {
+        return `the resolved stream answered ${head.status}`
+      }
+      const bytes = new Uint8Array(await head.arrayBuffer())
+      if (!looksLikeVideoBytes(bytes)) {
+        return `a video link downloaded ${describeBytes(bytes)}, not a video`
+      }
       return null
     },
   }

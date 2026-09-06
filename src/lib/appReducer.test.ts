@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  appReducer,
   autoOpensPreview,
+  initialState,
   isResolvingOrDownloading,
   isSuccessMessage,
+  type ImageData,
 } from './appReducer'
 
 const base = {
@@ -122,5 +125,54 @@ describe('isResolvingOrDownloading', () => {
   it('offers the retry once a failure has settled', () => {
     const message = 'Failed to download video file'
     expect(!isSuccessMessage(message) && !isResolvingOrDownloading(idle)).toBe(true)
+  })
+})
+
+/**
+ * The gallery opens by itself for a post that has one, and it used to open with
+ * nothing ticked — so its own action read "Download selected (0)", disabled,
+ * and the panel did nothing until the visitor found the "All" button.
+ */
+describe('a resolved carousel', () => {
+  const resolved = (images: ImageData[]) =>
+    appReducer(initialState, {
+      type: 'SET_DOWNLOAD_SUCCESS',
+      payload: {
+        downloadUrl: '',
+        audioUrl: '',
+        originalUrl: 'https://www.instagram.com/p/x/',
+        metadata: {
+          title: 't',
+          author: 'a',
+          duration: 0,
+          thumbnail: '',
+          images,
+        },
+      },
+    })
+
+  it('arrives with every slide selected', () => {
+    const state = resolved([
+      { id: '1', url: 'a.jpg', thumbnail: 'a.jpg', selected: false },
+      { id: '2', url: 'b.mp4', thumbnail: 'b.jpg', selected: false, kind: 'video' },
+    ])
+    expect(state.videoMetadata?.images?.every((i) => i.selected)).toBe(true)
+    expect(state.showImageGallery).toBe(true)
+  })
+
+  it('carries the kind through so the gallery knows what each slide is', () => {
+    const state = resolved([
+      { id: '1', url: 'a.jpg', thumbnail: 'a.jpg', selected: false },
+      { id: '2', url: 'b.mp4', thumbnail: 'b.jpg', selected: false, kind: 'video' },
+    ])
+    expect(state.videoMetadata?.images?.map((i) => i.kind)).toEqual([
+      undefined,
+      'video',
+    ])
+  })
+
+  it('leaves a plain video result alone', () => {
+    const state = resolved([])
+    expect(state.showImageGallery).toBe(false)
   })
 })

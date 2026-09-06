@@ -331,10 +331,17 @@ export async function handleDownload(
         // Only ever set from a cobalt tunnel here, and a tunnel always answers
         // with Content-Disposition: attachment.
         directIsAttachment: true,
+        // A gallery entry can be a clip (a carousel that mixes stills and
+        // video). Its bytes need the video proxy — the image proxy would set
+        // the wrong content type and the wrong referer — while its poster is
+        // still an image and goes through the image proxy like any other.
         images:
           videoData.images?.map((img) => ({
             ...img,
-            url: proxyImage(img.url),
+            url:
+              img.kind === 'video'
+                ? toMediaUrl(img.url, '/api/video')
+                : proxyImage(img.url),
             thumbnail: proxyImage(img.thumbnail),
             selected: false,
           })) || [],
@@ -609,12 +616,13 @@ export async function handleSubtitles(request: Request): Promise<Response> {
 }
 
 /**
- * Image URLs may arrive already wrapped in our own `/api/image?url=<raw>`
- * display proxy (Instagram). Unwrap back to the raw CDN URL so it can be
- * re-wrapped cleanly rather than double-proxied.
+ * Gallery URLs may arrive already wrapped in one of our own display proxies —
+ * `/api/image?url=<raw>` for stills (Instagram) and `/api/video?url=<raw>` for
+ * a carousel's clips. Unwrap back to the raw CDN URL so it can be re-wrapped
+ * cleanly rather than double-proxied.
  */
-function toRawImageUrl(u: string): string {
-  if (!u.startsWith('/api/image')) return u
+function toRawMediaUrl(u: string): string {
+  if (!u.startsWith('/api/image') && !u.startsWith('/api/video')) return u
   const marker = 'url='
   const index = u.indexOf(marker)
   if (index === -1) return u
@@ -626,32 +634,54 @@ function toRawImageUrl(u: string): string {
 }
 
 /**
- * Resolves a carousel's images to same-origin download URLs.
+ * Resolves a carousel's items to same-origin download URLs.
  *
  * Deliberately does no fetching. It used to build the ZIP here — pulling every
  * image into memory and running DEFLATE over already-compressed JPEGs, which a
  * 20-image post could push to ~100 MB inside a 128 MB isolate. Archiving now
  * happens in the browser, where the bytes are headed anyway, leaving this as a
- * pure mapping: no subrequests, constant time in the image count.
+ * pure mapping: no subrequests, constant time in the item count.
+ *
+ * Takes `items` — `{ url, kind }` — because a carousel can hold clips as well
+ * as stills, and the two need different proxies and different extensions. A
+ * plain `imageUrls` array still works and means "all stills", which is what
+ * every caller meant before carousels could carry video.
  */
 export async function handleImages(request: Request): Promise<Response> {
   try {
-    const { imageUrls, title } = await request.json()
+    const { imageUrls, items, title } = await request.json()
 
-    if (!imageUrls || !Array.isArray(imageUrls) || imageUrls.length === 0) {
+    const list: Array<{ url: string; kind?: string }> = Array.isArray(items)
+      ? items.filter((i) => typeof i?.url === 'string')
+      : Array.isArray(imageUrls)
+        ? imageUrls
+            .filter((u: unknown) => typeof u === 'string')
+            .map((url: string) => ({ url }))
+        : []
+
+    if (list.length === 0) {
       return Response.json({ success: false, error: 'No images provided' }, { status: 400 })
     }
 
     // Slug used for entry names so extracted files stay recognisable.
     const titleSlug = (typeof title === 'string' && slugify(title, 40)) || 'image'
-    const pad = Math.max(2, String(imageUrls.length).length)
+    const pad = Math.max(2, String(list.length).length)
 
     return Response.json({
       success: true,
-      images: imageUrls.map((url: string, index: number) => ({
-        url: `/api/image?url=${encodeURIComponent(toRawImageUrl(url))}`,
-        filename: `${titleSlug}_${String(index + 1).padStart(pad, '0')}.jpg`,
-      })),
+      images: list.map((item, index) => {
+        const isVideo = item.kind === 'video'
+        const ext = isVideo ? 'mp4' : 'jpg'
+        // Video bytes go through the video proxy, which sets the referer the
+        // CDN demands and forces a type the browser will play.
+        const proxy = isVideo ? '/api/video' : '/api/image'
+        return {
+          url: `${proxy}?url=${encodeURIComponent(toRawMediaUrl(item.url))}`,
+          filename: `${titleSlug}_${String(index + 1).padStart(pad, '0')}.${ext}`,
+          kind: isVideo ? 'video' : 'image',
+          ext,
+        }
+      }),
     })
   } catch {
     return Response.json(

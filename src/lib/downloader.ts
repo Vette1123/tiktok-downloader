@@ -172,6 +172,68 @@ export function resetCobaltCooldown(): void {
 }
 
 /**
+ * What a probe of a candidate stream found.
+ *
+ * `unreachable` is a maybe: this host could not fetch it, which a visitor on a
+ * different network still might. `wrong-type` is a no: the bytes are not the
+ * media that was asked for, so keeping the result as a fallback would ship the
+ * wrong file rather than a slow one.
+ */
+type StreamVerdict = 'ok' | 'unreachable' | 'wrong-type'
+
+/**
+ * Whether the first bytes of a stream are a still image.
+ *
+ * The signatures are the four a social CDN ever answers with — JPEG, PNG, GIF
+ * and WebP (RIFF....WEBP). Read from the bytes rather than the content type
+ * because the case this exists for is a tunnel, and a tunnel declares
+ * `application/octet-stream` for everything it carries.
+ */
+function looksLikeImageBytes(bytes: Uint8Array | undefined): boolean {
+  if (!bytes || bytes.length < 4) return false
+  const [a, b, c, d] = bytes
+  if (a === 0xff && b === 0xd8 && c === 0xff) return true // JPEG
+  if (a === 0x89 && b === 0x50 && c === 0x4e && d === 0x47) return true // PNG
+  if (a === 0x47 && b === 0x49 && c === 0x46 && d === 0x38) return true // GIF8
+  if (bytes.length >= 12) {
+    const riff = a === 0x52 && b === 0x49 && c === 0x46 && d === 0x46
+    const webp =
+      bytes[8] === 0x57 &&
+      bytes[9] === 0x45 &&
+      bytes[10] === 0x42 &&
+      bytes[11] === 0x50
+    if (riff && webp) return true
+  }
+  return false
+}
+
+const COBALT_VIDEO_EXTENSIONS = ['mp4', 'webm', 'mkv', 'mov', 'm4v']
+const COBALT_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'avif']
+const COBALT_AUDIO_EXTENSIONS = ['mp3', 'm4a', 'opus', 'ogg', 'wav', 'flac']
+
+/**
+ * What Cobalt actually put in the tunnel, from the filename it names.
+ *
+ * Cobalt answers `status: "tunnel"` whether it extracted the clip or gave up
+ * and fell back to the post's cover image — the status says a tunnel exists,
+ * not what is in it. The only thing in the response that distinguishes the two
+ * is `filename`, and reading it costs nothing, which is the point: a Worker's
+ * per-request budget is subrequests, so a free answer beats probing the bytes.
+ * The byte probe stays as the net for instances that name a file badly.
+ */
+export function cobaltMediaKind(
+  filename: unknown,
+): 'video' | 'image' | 'audio' | 'unknown' {
+  if (typeof filename !== 'string') return 'unknown'
+  const ext = (filename.match(/\.([A-Za-z0-9]+)$/)?.[1] ?? '').toLowerCase()
+  if (!ext) return 'unknown'
+  if (COBALT_VIDEO_EXTENSIONS.includes(ext)) return 'video'
+  if (COBALT_IMAGE_EXTENSIONS.includes(ext)) return 'image'
+  if (COBALT_AUDIO_EXTENSIONS.includes(ext)) return 'audio'
+  return 'unknown'
+}
+
+/**
  * Referer for the codec probe in `checkVideoCodecCompatible`.
  *
  * Intentionally not `getMediaReferer` from proxyHeaders: that one matches exact
@@ -541,13 +603,13 @@ interface IgMediaNode {
   display_url?: string
   thumbnail_src?: string
   display_resources?: Array<{ src: string }>
+  video_duration?: number
 }
 
 interface IgShortcodeMedia extends IgMediaNode {
   owner?: { username?: string; full_name?: string }
   edge_media_to_caption?: { edges?: Array<{ node?: { text?: string } }> }
   edge_sidecar_to_children?: { edges?: Array<{ node?: IgMediaNode }> }
-  video_duration?: number
 }
 
 /**
@@ -556,13 +618,36 @@ interface IgShortcodeMedia extends IgMediaNode {
  * `/api/v1/feed/reels_media/` (stories), which is why one interface covers
  * both. Only the fields we read are typed.
  */
+interface IgRendition {
+  url?: string
+  width?: number
+  height?: number
+}
+
 interface IgMediaInfoItem {
   user?: { username?: string }
   caption?: { text?: string }
-  video_versions?: Array<{ url?: string }>
-  image_versions2?: { candidates?: Array<{ url?: string }> }
+  video_versions?: IgRendition[]
+  image_versions2?: { candidates?: IgRendition[] }
   video_duration?: number
   carousel_media?: IgMediaInfoItem[]
+}
+
+/**
+ * The biggest rendition in one of Instagram's lists.
+ *
+ * The lists are *usually* largest-first, and taking `[0]` relied on that. They
+ * are not always: the media API returns `video_versions` ordered by encode
+ * `type` (101, 102, 103…), which is a rendition family and not a size, so the
+ * first entry can be the smaller file. Reading the dimensions costs nothing and
+ * removes the assumption; a list with no dimensions falls back to first, which
+ * is the old behaviour exactly.
+ */
+function igLargestRendition(list: IgRendition[] | undefined): string | undefined {
+  const usable = (list ?? []).filter((r) => r?.url)
+  if (usable.length === 0) return undefined
+  const area = (r: IgRendition) => (r.width ?? 0) * (r.height ?? 0)
+  return usable.reduce((best, r) => (area(r) > area(best) ? r : best)).url
 }
 
 // A story item is a media item that also carries its position in the reel.
@@ -598,6 +683,134 @@ export function instagramMediaId(shortcode: string): string | null {
 }
 
 /**
+ * Whether a link names a video by its shape alone.
+ *
+ * `/reel/`, `/reels/` and `/tv/` are Instagram's video routes: a photo is never
+ * served under one. That makes the answer to "is a still an acceptable result
+ * for this link" knowable before a single request, which is what stops a cover
+ * image being handed back as the download for a reel.
+ */
+export function instagramLinkIsVideo(url: string): boolean {
+  return /instagram\.com\/(?:[\w.-]+\/)?(?:reel|reels|tv)\//.test(url)
+}
+
+/**
+ * The `data-media-type` the embed page stamps on its container: `GraphImage`,
+ * `GraphVideo` or `GraphSidecar`. It is present in the bare shell — the render
+ * Instagram serves with no `gql_data` blob attached — which is exactly when
+ * every other signal in the page is missing, so it is the only marker that is
+ * there when it is needed. `none` when the post is unavailable.
+ */
+function instagramEmbedMediaType(html: string): string {
+  return html.match(/data-media-type="([^"]+)"/)?.[1] ?? ''
+}
+
+/**
+ * The post's own media, out of the view Instagram serves to link crawlers.
+ *
+ * Requesting the canonical post page with a crawler user agent returns a page
+ * carrying the full `video_versions` / `image_versions2` payload logged out —
+ * the surface that answers the reels the embed page refuses. The embed ships
+ * `is_video: true` with no `video_url` for a good fraction of reels (verified
+ * against live posts on 2026-09-06), and for those the only other logged-out
+ * option was a public Cobalt instance, which answers some of them with the
+ * cover JPEG. This reads the real MP4.
+ *
+ * Anchored on the post's own numeric media id, NOT on the first
+ * `video_versions` in the page: the crawler view also embeds neighbouring posts
+ * from the same account, so an unanchored scan can return a different clip.
+ * The id is arithmetic over the shortcode (`instagramMediaId`), so anchoring
+ * costs no extra request.
+ *
+ * Deliberately a bounded scan rather than a parse. The page is ~700 KB of
+ * JSON-in-HTML and JSON.parse over that is real CPU on a Worker, while what is
+ * wanted is one URL at a known key.
+ */
+export function parseInstagramCrawlerMedia(
+  html: string,
+  mediaId: string,
+): { videoUrl: string; poster: string; duration: number } | null {
+  const anchor = html.indexOf(`"pk":"${mediaId}"`)
+  if (anchor === -1) return null
+  const videoUrl = igUrlAfterKey(html, anchor, 'video_versions')
+  const poster = igUrlAfterKey(html, anchor, 'image_versions2')
+  if (!videoUrl && !poster) return null
+  return { videoUrl, poster, duration: instagramUrlDuration(videoUrl) }
+}
+
+/**
+ * A clip's length, read off the CDN URL itself.
+ *
+ * The crawler view publishes no `video_duration` field — the string appears in
+ * the page only as the name of an unrelated player feature flag, which is a
+ * good way to read a number off nothing. What it does publish is the URL's
+ * `efg` parameter: base64 JSON that Instagram's own encoder writes, carrying
+ * `duration_s`. Decoding it costs no request and no scan.
+ *
+ * Zero when the parameter is missing or unreadable, which the card already
+ * renders as "no duration" rather than as a wrong one.
+ */
+export function instagramUrlDuration(videoUrl: string): number {
+  if (!videoUrl) return 0
+  try {
+    const efg = new URL(videoUrl).searchParams.get('efg')
+    if (!efg) return 0
+    const seconds = JSON.parse(atob(efg))?.duration_s
+    return typeof seconds === 'number' && seconds > 0 ? seconds : 0
+  } catch {
+    return 0
+  }
+}
+
+/**
+ * Instagram writes one `og:title` for every post, shaped
+ * `Martin Garrix on Instagram: "comment your favourite scene…"`. These two pull
+ * the account and the caption back out of it, which is all the metadata the
+ * crawler view is asked for — the alternative is scanning 700 KB for two more
+ * keys.
+ */
+export function instagramCaptionAuthor(ogTitle: string): string {
+  return ogTitle.match(/^(.+?) on Instagram/)?.[1]?.trim() || 'Instagram'
+}
+
+export function instagramCaptionTitle(
+  ogTitle: string,
+  shortcode: string,
+): string {
+  const quoted = ogTitle.match(/on Instagram:\s*"([\s\S]*)"\s*$/)?.[1]?.trim()
+  const text = quoted || ogTitle.trim()
+  if (!text) return `Instagram video ${shortcode}`
+  return text.slice(0, 80).replace(/\s+/g, ' ').trim()
+}
+
+/** How far past a key to look for its first `url`. One rendition list fits. */
+const IG_KEY_SCAN_SPAN = 9000
+/** How far past the post's own id its media payload can start. */
+const IG_ANCHOR_SPAN = 80_000
+
+/**
+ * The first `"url"` value after `key`, JSON-unescaped.
+ *
+ * The payload is a JSON document embedded in the HTML, so a URL arrives with
+ * its solidi escaped (`https:\/\/…`) and its `=` double-escaped
+ * (`%3D`). Re-parsing it as a JSON string decodes every one of those
+ * correctly, where a hand-rolled replace would miss the ones nobody thought of.
+ */
+function igUrlAfterKey(html: string, from: number, key: string): string {
+  const at = html.indexOf(key, from)
+  if (at === -1 || at - from > IG_ANCHOR_SPAN) return ''
+  const raw = /"url":"(https:.*?)"/.exec(
+    html.slice(at, at + IG_KEY_SCAN_SPAN),
+  )?.[1]
+  if (!raw) return ''
+  try {
+    return JSON.parse(`"${raw}"`) as string
+  } catch {
+    return ''
+  }
+}
+
+/**
  * One media-API item as a `shortcode_media` node.
  *
  * The two APIs describe the same media in different vocabularies: the private
@@ -607,11 +820,12 @@ export function instagramMediaId(shortcode: string): string | null {
  * poster-is-not-a-photo rule in `parseInstagramMedia` alone.
  */
 function igInfoNode(item: IgMediaInfoItem): IgMediaNode {
-  const video = item.video_versions?.[0]?.url
+  const video = igLargestRendition(item.video_versions)
   return {
     is_video: Boolean(video),
     video_url: video,
-    display_url: item.image_versions2?.candidates?.[0]?.url,
+    display_url: igLargestRendition(item.image_versions2?.candidates),
+    video_duration: item.video_duration,
   }
 }
 
@@ -621,7 +835,6 @@ function igInfoToShortcodeMedia(item: IgMediaInfoItem): IgShortcodeMedia {
     ...igInfoNode(item),
     owner: { username: item.user?.username },
     edge_media_to_caption: { edges: [{ node: { text: item.caption?.text } }] },
-    video_duration: item.video_duration,
     ...(children && children.length > 0
       ? {
           edge_sidecar_to_children: {
@@ -713,8 +926,8 @@ function storyItemToVideoData(
   originalUrl: string,
   fallbackId?: string,
 ): VideoData | null {
-  const video = item.video_versions?.[0]?.url
-  const image = item.image_versions2?.candidates?.[0]?.url
+  const video = igLargestRendition(item.video_versions)
+  const image = igLargestRendition(item.image_versions2?.candidates)
   const id = String(item.pk ?? fallbackId ?? Date.now())
   const common = {
     id,
@@ -1377,7 +1590,7 @@ export class Downloader {
     if (
       media &&
       !media.isStream &&
-      !(await this.verifyStreamReachable(media.mediaUrl, { rejectHtml: true }))
+      (await this.probeStream(media.mediaUrl, { rejectHtml: true })) !== 'ok'
     ) {
       media = null
     }
@@ -1774,10 +1987,14 @@ export class Downloader {
       try {
         const result = await method()
         if (result && result.downloadUrl) {
-          // Reject dead/region-locked stream URLs so the UI never shows a
-          // broken player — fall through to the next extractor instead.
-          if (!(await this.verifyStreamReachable(result.downloadUrl))) {
-            console.warn('YouTube candidate stream unreachable, trying next...')
+          // Reject dead/region-locked stream URLs — and anything that turns out
+          // not to be a video at all — so the UI never shows a broken player.
+          // Fall through to the next extractor instead.
+          if (
+            (await this.probeStream(result.downloadUrl, { expect: 'video' })) !==
+            'ok'
+          ) {
+            console.warn('YouTube candidate stream unusable, trying next...')
             continue
           }
           // YouTube never yields a photo gallery.
@@ -1968,23 +2185,44 @@ export class Downloader {
     //      `contextJSON: null` — that shell is NOT evidence the surface is gone,
     //      which is exactly the trap in
     //      lessons/2026-08-15-instagram-logged-out-wall.md.
-    //   2. The private media API — the only path that resolves what Instagram
+    //   2. The crawler view of the post page — the surface that answers the
+    //      reels the embed will not. Its JSON ships `is_video: true` with no
+    //      `video_url` for a good share of reels, and for those this is the only
+    //      logged-out path to the actual MP4. Login-free, so every visitor gets
+    //      it. Second rather than first because it costs ~700 KB against the
+    //      embed's ~260 KB and answers a smaller set.
+    //   3. The private media API — the only path that resolves what Instagram
     //      will not serve anonymously, and the only one the session buys
     //      anything on. No-ops (returns null, sends nothing) for an
-    //      uncredentialed resolve, and tried after the embed so the burner
+    //      uncredentialed resolve, and tried after the free paths so the burner
     //      account is only used when actually needed.
-    //   3. Cobalt — the datacenter-reachable fallback, and the one that answers
-    //      when the embed shell comes back. Instagram's own signed
+    //   4. Cobalt — the datacenter-reachable fallback. Instagram's own signed
     //      video CDN URLs are frequently refused with an
     //      HTTP 500/403 when re-fetched from a datacenter IP (e.g. Vercel), even
     //      though extraction succeeded — so the /api/video proxy can't stream
     //      them and the player is dead. Cobalt re-extracts the clip and hands
     //      back a URL that DOES stream from any IP, so it's the rescue path when
-    //      the primary stream is unreachable here.
+    //      the primary stream is unreachable here. It is also the one that
+    //      answers a reel with the post's cover JPEG when its own extraction
+    //      failed, which is why every stream below is type-checked.
+
+    // Whether a still image can possibly be the right answer for this link.
+    // `/reel/` and `/tv/` settle it before any request; for a `/p/` URL the
+    // embed page's own `data-media-type` settles it, so this is refined as the
+    // chain runs.
+    let expectsVideo =
+      instagramLinkIsVideo(url) || instagramLinkIsVideo(resolvedUrl)
+
     const methods: Array<() => Promise<VideoData | null>> = [
+      async () => {
+        if (!shortcode) return null
+        const embed = await this.tryInstagramEmbed(shortcode, url)
+        expectsVideo = expectsVideo || embed.isVideo
+        return embed.data
+      },
       () =>
-        shortcode
-          ? this.tryInstagramEmbed(shortcode, url)
+        shortcode && expectsVideo
+          ? this.tryInstagramCrawlerView(shortcode, url)
           : Promise.resolve(null),
       () =>
         shortcode
@@ -1997,6 +2235,9 @@ export class Downloader {
     // that if no method yields a verified-playable stream we still return
     // something (preserving prior behavior) rather than failing outright.
     let unverifiedVideo: VideoData | null = null
+    // And, separately, a gallery that arrived for a link that promised a video.
+    // It is not the answer while any extractor is left, but it beats failing.
+    let stillsOnly: VideoData | null = null
 
     for (const method of methods) {
       try {
@@ -2006,13 +2247,24 @@ export class Downloader {
         result.isPhotoCarousel = false
 
         if (result.downloadUrl) {
-          // Confirm the video stream actually serves bytes from THIS host before
-          // committing to it. Instagram's signed CDN URLs often 500/403 when
-          // re-fetched from a datacenter IP (Vercel) even though extraction
-          // worked — which renders a dead player. If it's unreachable, fall
-          // through to the next method (ultimately Cobalt, whose URL streams
-          // from any IP). Mirrors the YouTube path's reachability guard.
-          if (await this.verifyStreamReachable(result.downloadUrl)) return result
+          // Confirm the stream actually serves bytes from THIS host, and that
+          // those bytes are a video, before committing to it. Instagram's
+          // signed CDN URLs often 500/403 when re-fetched from a datacenter IP
+          // (Vercel) even though extraction worked — which renders a dead
+          // player. And a Cobalt tunnel that failed to extract the clip streams
+          // the cover JPEG perfectly happily, which is worse: it passes a
+          // reachability check and downloads as a picture named .mp4.
+          const verdict = await this.probeStream(result.downloadUrl, {
+            expect: 'video',
+          })
+          if (verdict === 'ok') return result
+          if (verdict === 'wrong-type') {
+            // Not a maybe. Never hold it as a fallback.
+            console.warn(
+              'Instagram method returned a still where a video was asked for, trying next...',
+            )
+            continue
+          }
           if (!unverifiedVideo) unverifiedVideo = result
           console.warn(
             'Instagram video stream unreachable from here, trying next method...',
@@ -2020,7 +2272,10 @@ export class Downloader {
           continue
         }
 
-        if ((result.images?.length ?? 0) > 0) return result
+        if ((result.images?.length ?? 0) > 0) {
+          if (!expectsVideo) return result
+          stillsOnly ??= result
+        }
       } catch (e) {
         console.warn('Instagram method failed, trying next...', e)
       }
@@ -2030,6 +2285,10 @@ export class Downloader {
     // URL (just couldn't confirm it here), return it anyway — it may still play
     // for the client, and this is no worse than the prior behavior.
     if (unverifiedVideo) return unverifiedVideo
+    // A gallery for a video link is the last thing tried, never the first: it
+    // is the poster, and handing it over as though it were the clip is the
+    // failure this whole chain was rebuilt to stop.
+    if (stillsOnly) return stillsOnly
 
     // A credentialed request whose session is locked reached here as if it were
     // anonymous. Say so, rather than describing this post as the unusual one:
@@ -2256,11 +2515,25 @@ export class Downloader {
    * the right test for a tunnel (which declares no useful type), but a URL
    * scraped off a page can be answered with an error page, and an error page
    * has bytes too.
+   *
+   * `expect: 'video'` refuses a response that is a *picture*. That is not
+   * hypothetical tidiness: a public Cobalt instance that cannot extract a reel
+   * still answers `status: "tunnel"` and streams the post's cover JPEG, and
+   * "does it serve bytes" says yes to a JPEG. `/api/video` then labels it
+   * `video/mp4`, so the visitor downloads an image named `.mp4` — pasting a
+   * video link and getting a picture. See
+   * lessons/2026-09-06-the-tunnel-that-served-a-jpeg.md.
+   *
+   * The verdict is three-valued on purpose. "Unreachable" is a maybe — the
+   * caller keeps such a result as a last resort, because a URL this host
+   * cannot fetch may still play for the visitor. "Wrong type" is a no: those
+   * bytes are not the media that was asked for, and holding them as a fallback
+   * is how the JPEG shipped.
    */
-  private async verifyStreamReachable(
+  private async probeStream(
     url: string,
-    opts?: { rejectHtml?: boolean },
-  ): Promise<boolean> {
+    opts?: { rejectHtml?: boolean; expect?: 'video' },
+  ): Promise<StreamVerdict> {
     // Native fetch rather than axios: axios's `responseType: 'stream'` hands
     // back a Node Readable, which its fetch adapter cannot produce and which
     // does not exist on workerd. A web ReadableStream works identically on both
@@ -2282,32 +2555,41 @@ export class Downloader {
       })
 
       const statusOk = response.status === 200 || response.status === 206
-      const isPage = (response.headers.get('content-type') ?? '').includes(
-        'text/html',
-      )
+      const contentType = (response.headers.get('content-type') ?? '')
+        .toLowerCase()
+      const isPage = contentType.includes('text/html')
       // An explicit Content-Length: 0 is the empty-tunnel signature — reject early.
+      if (!statusOk || response.headers.get('content-length') === '0') {
+        await response.body?.cancel()
+        return 'unreachable'
+      }
       if (
-        !statusOk ||
-        response.headers.get('content-length') === '0' ||
-        (opts?.rejectHtml && isPage)
+        (opts?.rejectHtml && isPage) ||
+        (opts?.expect === 'video' && (isPage || contentType.startsWith('image/')))
       ) {
         await response.body?.cancel()
-        return false
+        return 'wrong-type'
       }
-      if (!response.body) return false
+      if (!response.body) return 'unreachable'
 
-      // True on the first non-empty chunk; false if the body ends empty, errors,
-      // or stalls. One chunk is enough — the rest of the file is never pulled,
-      // and cancelling tears the connection down so the upstream stops sending.
+      // Reachable on the first non-empty chunk; unreachable if the body ends
+      // empty, errors, or stalls. One chunk is enough — the rest of the file is
+      // never pulled, and cancelling tears the connection down so the upstream
+      // stops sending. The chunk is also the only honest answer about *what*
+      // this is: a tunnel declares no content type, so the bytes have to say.
       const reader = response.body.getReader()
       try {
         const { value, done } = await reader.read()
-        return !done && (value?.byteLength ?? 0) > 0
+        if (done || (value?.byteLength ?? 0) === 0) return 'unreachable'
+        if (opts?.expect === 'video' && looksLikeImageBytes(value)) {
+          return 'wrong-type'
+        }
+        return 'ok'
       } finally {
         await reader.cancel().catch(() => {})
       }
     } catch {
-      return false
+      return 'unreachable'
     } finally {
       clearTimeout(timer)
     }
@@ -2591,14 +2873,36 @@ export class Downloader {
 
     if (data.status === 'tunnel' || data.status === 'redirect') {
       const isAudio = this.mode === 'audio'
-      return {
+      const kind = cobaltMediaKind(data.filename)
+      const common = {
         id: Date.now().toString(),
         title: data.filename?.replace(/\.[^.]+$/, '') || 'Social Media Video',
         url,
-        thumbnail: '',
         duration: 0,
         author: 'Unknown',
         description: '',
+        isPhotoCarousel: false,
+      }
+
+      // A tunnel carrying a PICTURE. Cobalt answers `tunnel` whether it
+      // extracted the clip or gave up and fell back to the post's cover, so
+      // this is the difference between a video and a still — and it used to be
+      // read as a video, which is how a reel came out of /api/video as a JPEG
+      // named .mp4. Returned as an image so a genuine single-photo post still
+      // resolves; the caller decides whether a still answers the link it was
+      // given. See lessons/2026-09-06-the-tunnel-that-served-a-jpeg.md.
+      if (kind === 'image') {
+        return {
+          ...common,
+          thumbnail: data.url,
+          downloadUrl: '',
+          images: [{ id: `${common.id}_0`, url: data.url, thumbnail: data.url }],
+        }
+      }
+
+      return {
+        ...common,
+        thumbnail: '',
         // In audio mode the tunnel is an MP3 — hand it back as the music track
         // (no video), so the API serves it through the audio path.
         downloadUrl: isAudio ? '' : data.url,
@@ -2611,34 +2915,41 @@ export class Downloader {
     }
 
     if (data.status === 'picker') {
-      const items = data.picker as Array<{
+      const items = (data.picker ?? []) as Array<{
         type: string
         url: string
         thumb?: string
       }>
-      const videos = items?.filter((p) => p.type === 'video') || []
-      const photos = items?.filter((p) => p.type === 'photo') || []
-      const downloadUrl = videos[0]?.url || items?.[0]?.url || ''
+      const videos = items.filter((p) => p.type === 'video')
 
-      const images: ImageData[] = photos.map(
-        (img: { url: string; thumb?: string }, i: number) => ({
-          id: `img_${i}`,
-          url: img.url,
-          thumbnail: img.thumb || img.url,
-        }),
-      )
+      // Every item, in the order the post publishes them, each labelled with
+      // what it is. Two things used to be lost here: a `gif` item was dropped
+      // on the floor, and the second and later VIDEOS of a carousel were
+      // dropped too — a post of three clips handed back one. The gallery can
+      // carry a video now, so it carries all of them.
+      const gallery: ImageData[] = items.map((item, i) => ({
+        id: `item_${i}`,
+        url: item.url,
+        thumbnail: item.thumb || item.url,
+        kind: item.type === 'video' ? 'video' : 'image',
+      }))
 
       return {
         id: Date.now().toString(),
         title: data.filename?.replace(/\.[^.]+$/, '') || 'Social Media Content',
         url,
-        thumbnail: items?.[0]?.thumb || '',
+        thumbnail: items[0]?.thumb || '',
         duration: 0,
         author: 'Unknown',
         description: '',
-        downloadUrl,
-        images: images.length > 0 ? images : undefined,
-        isPhotoCarousel: images.length > 0,
+        // The first VIDEO, or nothing. Never `items[0]`: on an all-photo picker
+        // that handed a JPEG back as the primary stream, which /api/video then
+        // labelled video/mp4.
+        downloadUrl: videos[0]?.url ?? '',
+        images: gallery.length > 0 ? gallery : undefined,
+        // Only a set that is entirely photos is a slideshow — that flag routes
+        // to the ffmpeg renderer, which has nothing to do with a clip.
+        isPhotoCarousel: gallery.length > 0 && videos.length === 0,
       }
     }
 
@@ -3347,11 +3658,17 @@ export class Downloader {
    *
    * First parses the rich JSON the page ships (handles carousels); otherwise
    * falls back to scraping the rendered single image/video element.
+   *
+   * Reports what the post IS alongside what it could extract. The page stamps
+   * `data-media-type` on its container whether or not the JSON blob came with
+   * it, so this is the one place that can tell the caller "the link you were
+   * given is a video" for a `/p/` URL — which decides whether a still is an
+   * acceptable answer further down the chain.
    */
   private async tryInstagramEmbed(
     shortcode: string,
     originalUrl: string,
-  ): Promise<VideoData | null> {
+  ): Promise<{ data: VideoData | null; isVideo: boolean }> {
     const embedUrl = `https://www.instagram.com/p/${shortcode}/embed/captioned/`
     const response = await http.get(embedUrl, {
       headers: {
@@ -3367,7 +3684,14 @@ export class Downloader {
     })
 
     const html = typeof response.data === 'string' ? response.data : ''
-    if (!html) return null
+    if (!html) return { data: null, isVideo: false }
+
+    // What the page says the post is, before anything is extracted from it.
+    // `GraphVideo` is a single clip; a `GraphSidecar` may still contain one,
+    // which the JSON below settles.
+    const declaredType = instagramEmbedMediaType(html)
+    const isVideo = declaredType === 'GraphVideo'
+    const bail = { data: null, isVideo }
 
     // 1) Best case: the embed page ships the full shortcode_media JSON.
     const media = this.extractEmbeddedShortcodeMedia(html)
@@ -3376,12 +3700,18 @@ export class Downloader {
       // The embed JSON marks a reel/video as is_video=true but ships NO video_url
       // (the clip loads via client JS) — only a poster display_url. parseInstagram-
       // Media refuses to emit that poster as a photo, so `parsed` comes back with
-      // no downloadUrl. Defer to the GraphQL extractor (which returns the real
-      // video_url) instead of returning an empty result here — and crucially, do
-      // NOT fall through to the scrape fallback below, which would re-emit the
-      // poster as a single photo. This is the case that misrendered reels.
-      if (this.mediaContainsVideo(media) && !parsed.downloadUrl) return null
-      if (parsed.downloadUrl || (parsed.images?.length ?? 0) > 0) return parsed
+      // no downloadUrl. Defer to the crawler-view extractor (which returns the
+      // real video URL) instead of returning an empty result here — and
+      // crucially, do NOT fall through to the scrape fallback below, which would
+      // re-emit the poster as a single photo. This is the case that misrendered
+      // reels.
+      const containsVideo = this.mediaContainsVideo(media)
+      if (containsVideo && !parsed.downloadUrl) {
+        return { data: null, isVideo: isVideo || containsVideo }
+      }
+      if (parsed.downloadUrl || (parsed.images?.length ?? 0) > 0) {
+        return { data: parsed, isVideo: isVideo || containsVideo }
+      }
     }
 
     // 2) Fallback: scrape the rendered embed for a single image / video.
@@ -3392,24 +3722,31 @@ export class Downloader {
       textOfFirstWithClass(html, 'Username') ||
       'Unknown'
 
-    if (!imgSrc && !videoSrc) return null
+    if (!imgSrc && !videoSrc) return bail
 
     // CRITICAL: Instagram video embeds ship NO usable <video src> (the clip is
     // loaded by client JS), only the poster frame as img.EmbeddedMediaImage. So
     // when the rich JSON above didn't parse, blindly returning that poster would
-    // misrender a reel as a single photo. If the page carries any video marker,
-    // bail to null so the caller falls through to the GraphQL extractor (which
-    // returns the real video_url) instead of emitting a bogus image.
+    // misrender a reel as a single photo. If the page says the post is a video,
+    // bail so the caller falls through to an extractor that returns the real
+    // stream instead of emitting a bogus image.
+    //
+    // `data-media-type` leads, and the string probes are the backstop rather
+    // than the test. Every one of those strings lives in the `gql_data` blob,
+    // so they can only fire when that blob is present — which is precisely when
+    // this fallback is NOT running. The attribute is in the bare shell.
     const looksLikeVideo =
       !videoSrc &&
-      (/"is_video"\s*:\s*(true|1)/.test(html) ||
+      (isVideo ||
+        declaredType === 'GraphSidecar' ||
+        /"is_video"\s*:\s*(true|1)/.test(html) ||
         /"video_url"\s*:\s*"/.test(html) || // a real URL value, not "video_url":null
         html.includes('video_view_count') || // video-only metadata fields
         html.includes('video_duration') ||
         hasTag(html, 'video'))
-    if (looksLikeVideo) return null
+    if (looksLikeVideo) return bail
 
-    return {
+    const scraped: VideoData = {
       id: shortcode,
       title: `Instagram post by @${username}`,
       url: originalUrl,
@@ -3422,6 +3759,60 @@ export class Downloader {
         !videoSrc && imgSrc
           ? [{ id: `${shortcode}_0`, url: imgSrc, thumbnail: imgSrc }]
           : undefined,
+      isPhotoCarousel: false,
+    }
+    return { data: scraped, isVideo }
+  }
+
+  /**
+   * The reel Instagram will not put in its embed, out of the page it shows to
+   * link crawlers.
+   *
+   * Logged out and login-free, so it runs for every visitor — unlike the media
+   * API, which is one real account's session and gated behind the `ig` grant.
+   * Asked for with a crawler user agent because that is the only request shape
+   * that gets the media payload: the same URL asked as a browser answers with
+   * a shell that carries none (measured 2026-09-06 — 911 KB with
+   * `video_versions` for a crawler, 618 KB without for a browser).
+   *
+   * Placed AFTER the embed on purpose. The embed answers most posts in a
+   * quarter of the bytes; this exists for the ones it will not.
+   */
+  private async tryInstagramCrawlerView(
+    shortcode: string,
+    originalUrl: string,
+  ): Promise<VideoData | null> {
+    const mediaId = instagramMediaId(shortcode)
+    if (!mediaId) return null
+
+    const response = await http.get(
+      `https://www.instagram.com/reel/${shortcode}/`,
+      {
+        headers: {
+          'User-Agent': LINK_CRAWLER_AGENT,
+          Accept: 'text/html,application/xhtml+xml',
+        },
+        timeout: 20000,
+        validateStatus: () => true,
+      },
+    )
+    if (response.status !== 200) return null
+    const html = typeof response.data === 'string' ? response.data : ''
+    if (!html) return null
+
+    const found = parseInstagramCrawlerMedia(html, mediaId)
+    if (!found?.videoUrl) return null
+
+    const caption = decodeEntities(metaContent(html, 'og:title') || '')
+    return {
+      id: shortcode,
+      title: instagramCaptionTitle(caption, shortcode),
+      url: originalUrl,
+      thumbnail: found.poster,
+      duration: Math.round(found.duration),
+      author: instagramCaptionAuthor(caption),
+      description: caption,
+      downloadUrl: found.videoUrl,
       isPhotoCarousel: false,
     }
   }
@@ -3444,22 +3835,38 @@ export class Downloader {
 
     const children = media.edge_sidecar_to_children?.edges
     if (Array.isArray(children) && children.length > 0) {
-      // Carousel: collect every photo; the first video becomes the primary clip.
-      // A video child is added ONLY when it carries a real video_url — never via
-      // its poster display_url (see the single-media note below).
+      // Carousel: every slide, in the order the post publishes them. The first
+      // clip is also the primary `downloadUrl` so the big button still works,
+      // and the rest are gallery entries of kind `video` — they used to be
+      // thrown away, so a post of three clips downloaded as one.
+      //
+      // A video slide is only ever emitted with a real video_url; its poster
+      // display_url is never passed off as a photo (see the single-media note
+      // below).
       children.forEach((edge, i) => {
         const node = edge?.node
         if (!node) return
-        if (node.is_video && node.video_url) {
+        if (node.is_video) {
+          if (!node.video_url) return
           if (!downloadUrl) downloadUrl = node.video_url
-        } else if (!node.is_video && node.display_url) {
+          images.push({
+            id: `${shortcode}_${i}`,
+            url: node.video_url,
+            thumbnail: node.display_url || '',
+            kind: 'video',
+          })
+        } else if (node.display_url) {
           images.push({
             id: `${shortcode}_${i}`,
             url: node.display_url,
             thumbnail: node.display_resources?.[0]?.src || node.display_url,
+            kind: 'image',
           })
         }
       })
+      // A carousel of one clip is not a gallery — it is the clip, which
+      // `downloadUrl` already carries.
+      if (images.length === 1 && images[0].kind === 'video') images.length = 0
     } else if (media.is_video && media.video_url) {
       downloadUrl = media.video_url
     } else if (!media.is_video && media.display_url) {
@@ -3467,23 +3874,37 @@ export class Downloader {
       // is_video=true with just a poster display_url) deliberately yields
       // NOTHING here — passing its poster off as a photo is exactly what
       // misrendered reels as single images. The caller detects the empty
-      // result and defers to the GraphQL extractor (which returns video_url).
+      // result and defers to the crawler-view extractor, which returns the
+      // real stream.
       images.push({
         id: `${shortcode}_0`,
         url: media.display_url,
         thumbnail: media.display_url,
+        kind: 'image',
       })
     }
 
     const thumbnail =
       media.display_url || media.thumbnail_src || images[0]?.thumbnail || ''
 
+    // A carousel container carries no duration of its own — the clip inside it
+    // does, and the embed's children do not carry one either. Reading only the
+    // container reported every carousel video as 0:00; the URL itself is the
+    // last resort and answers when neither field is present.
+    const firstVideoChild = children
+      ?.map((edge) => edge?.node)
+      .find((node) => node?.is_video && node.video_url)
+
     return {
       id: shortcode,
       title,
       url: originalUrl,
       thumbnail,
-      duration: Math.round(media.video_duration || 0),
+      duration: Math.round(
+        media.video_duration ||
+          firstVideoChild?.video_duration ||
+          instagramUrlDuration(downloadUrl),
+      ),
       author: username,
       description: caption,
       downloadUrl,

@@ -1,7 +1,18 @@
+/**
+ * One item of a post's gallery.
+ *
+ * Named for what it started as. It carries videos too now, because a carousel
+ * can mix clips and stills and the old shape could only describe the stills:
+ * the first clip became the post's single `downloadUrl` and every clip after it
+ * was silently dropped, so a post of three videos downloaded as one. `kind`
+ * tells the gallery which proxy to fetch through and which extension to name
+ * the file — absent means image, which is what every pre-existing caller meant.
+ */
 export interface ImageData {
   id: string
   url: string
   thumbnail: string
+  kind?: 'image' | 'video'
 }
 
 export interface VideoData {

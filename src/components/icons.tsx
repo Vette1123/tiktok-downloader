@@ -385,6 +385,34 @@ export const ChevronDownIcon = ({ className = 'w-4 h-4', ...props }: IconProps) 
   </svg>
 )
 
+export const ChevronLeftIcon = ({ className = 'w-5 h-5', ...props }: IconProps) => (
+  <svg className={className} {...strokeIcon} {...props}>
+    <path d='m15 18-6-6 6-6' />
+  </svg>
+)
+
+export const ChevronRightIcon = ({ className = 'w-5 h-5', ...props }: IconProps) => (
+  <svg className={className} {...strokeIcon} {...props}>
+    <path d='m9 18 6-6-6-6' />
+  </svg>
+)
+
+/**
+ * Marks a gallery tile that holds a clip rather than a still. Filled, not
+ * stroked, so it stays legible at 12px over an arbitrary frame.
+ */
+export const PlayIcon = ({ className = 'w-4 h-4', ...props }: IconProps) => (
+  <svg
+    className={className}
+    viewBox='0 0 24 24'
+    fill='currentColor'
+    aria-hidden='true'
+    {...props}
+  >
+    <path d='M8 5.14v13.72c0 .83.92 1.33 1.62.88l10.79-6.86a1.04 1.04 0 0 0 0-1.76L9.62 4.26A1.04 1.04 0 0 0 8 5.14Z' />
+  </svg>
+)
+
 /** The footer's link to our streaming site. Lucide's `clapperboard`. */
 export const FilmIcon = ({ className = 'w-4 h-4', ...props }: IconProps) => (
   <svg className={className} {...strokeIcon} {...props}>

@@ -3,7 +3,12 @@
 import { useEffect, useCallback, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion, type PanInfo } from 'motion/react'
-import { DownloadIcon, CloseIcon } from './icons'
+import {
+  DownloadIcon,
+  CloseIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+} from './icons'
 import { buildDownloadFilename } from '@/lib/filename'
 import { useHydrated } from '@/lib/clientEnv'
 
@@ -11,6 +16,8 @@ interface LightboxImage {
   id: string
   url: string
   thumbnail: string
+  /** A carousel slide can be a clip. Absent means image. */
+  kind?: 'image' | 'video'
 }
 
 interface ImageLightboxProps {
@@ -58,6 +65,7 @@ export function ImageLightbox({
 }: ImageLightboxProps) {
   const current = images[activeIndex]
   const hasMultiple = images.length > 1
+  const isVideo = current?.kind === 'video'
 
   // Render via a portal to <body>. The lightbox uses `position: fixed` to cover
   // the viewport, but an ancestor in the results card has a CSS `transform`
@@ -85,9 +93,17 @@ export function ImageLightbox({
 
   const handleKey = useCallback(
     (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-      else if (e.key === 'ArrowLeft' && hasMultiple) paginate(-1)
-      else if (e.key === 'ArrowRight' && hasMultiple) paginate(1)
+      if (e.key === 'Escape') {
+        onClose()
+        return
+      }
+      if (!hasMultiple) return
+      // The browser's own video controls bind the arrow keys to seeking. With
+      // a clip focused, one press would otherwise both scrub the video and
+      // change the slide out from under it.
+      if ((e.target as HTMLElement | null)?.closest?.('video')) return
+      if (e.key === 'ArrowLeft') paginate(-1)
+      else if (e.key === 'ArrowRight') paginate(1)
     },
     [onClose, paginate, hasMultiple],
   )
@@ -119,9 +135,16 @@ export function ImageLightbox({
     onClose()
   }
 
+  const [downloading, setDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState('')
+
   const handleDownloadOne = async () => {
+    if (downloading) return
+    setDownloading(true)
+    setDownloadError('')
     try {
       const res = await fetch(current.url)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const blob = await res.blob()
       const blobUrl = URL.createObjectURL(blob)
       const link = document.createElement('a')
@@ -130,7 +153,9 @@ export function ImageLightbox({
         platform,
         author,
         title,
-        ext: 'jpg',
+        // A carousel slide is whatever it is. Naming a clip `.jpg` produced a
+        // file the operating system opened in an image viewer.
+        ext: isVideo ? 'mp4' : 'jpg',
         index: activeIndex + 1,
         total: images.length,
       })
@@ -139,7 +164,10 @@ export function ImageLightbox({
       document.body.removeChild(link)
       URL.revokeObjectURL(blobUrl)
     } catch (err) {
-      console.error('Single image download failed:', err)
+      console.error('Single slide download failed:', err)
+      setDownloadError('That file would not download. Try again.')
+    } finally {
+      setDownloading(false)
     }
   }
 
@@ -153,7 +181,7 @@ export function ImageLightbox({
       onClick={handleBackdropClick}
       role='dialog'
       aria-modal='true'
-      aria-label='Image preview'
+      aria-label='Media preview'
     >
       {/* Top bar: counter + close */}
       <div
@@ -188,20 +216,21 @@ export function ImageLightbox({
               stop(e)
               paginate(-1)
             }}
-            className='absolute left-2 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-2xl leading-none text-white transition-colors hover:bg-white/20 sm:left-4 md:h-12 md:w-12'
-            aria-label='Previous image'
+            className='absolute left-2 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/10 transition-colors hover:bg-white/20 sm:left-4 md:h-12 md:w-12'
+            aria-label='Previous slide'
           >
-            ‹
+            <ChevronLeftIcon className='h-5 w-5 md:h-6 md:w-6' />
           </button>
         )}
 
-        {/* `popLayout` removes the exiting image from layout flow so the new
-            image takes the centered slot immediately — no flex-stacking jump. */}
+        {/* `popLayout` removes the exiting slide from layout flow so the new one
+            takes the centered slot immediately — no flex-stacking jump.
+            A clip is never draggable: the drag would swallow every touch aimed
+            at the scrubber, so a video slide paginates by arrow, swipe on the
+            surrounding area, or keyboard. */}
         <AnimatePresence initial={false} custom={direction} mode='popLayout'>
-          <motion.img
+          <motion.div
             key={activeIndex}
-            src={current.url}
-            alt={`Slide ${activeIndex + 1} of ${images.length}`}
             custom={direction}
             variants={slideVariants}
             initial='enter'
@@ -211,16 +240,33 @@ export function ImageLightbox({
               x: { type: 'spring', stiffness: 280, damping: 32, mass: 0.6 },
               opacity: { duration: 0.18 },
             }}
-            drag={hasMultiple ? 'x' : false}
+            drag={hasMultiple && !isVideo ? 'x' : false}
             dragConstraints={{ left: 0, right: 0 }}
             dragElastic={1}
             dragMomentum={false}
             onDragStart={() => setIsDragging(true)}
             onDragEnd={handleDragEnd}
             onClick={stop}
-            draggable={false}
-            className='max-h-full max-w-full cursor-grab rounded-lg object-contain shadow-2xl select-none active:cursor-grabbing'
-          />
+            className='flex max-h-full max-w-full items-center justify-center'
+          >
+            {isVideo ? (
+              <video
+                src={current.url}
+                poster={current.thumbnail || undefined}
+                controls
+                playsInline
+                preload='metadata'
+                className='max-h-full max-w-full rounded-lg bg-black shadow-2xl'
+              />
+            ) : (
+              <img
+                src={current.url}
+                alt={`Slide ${activeIndex + 1} of ${images.length}`}
+                draggable={false}
+                className='max-h-full max-w-full cursor-grab rounded-lg object-contain shadow-2xl select-none active:cursor-grabbing'
+              />
+            )}
+          </motion.div>
         </AnimatePresence>
 
         {hasMultiple && (
@@ -229,23 +275,36 @@ export function ImageLightbox({
               stop(e)
               paginate(1)
             }}
-            className='absolute right-2 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-2xl leading-none text-white transition-colors hover:bg-white/20 sm:right-4 md:h-12 md:w-12'
-            aria-label='Next image'
+            className='absolute right-2 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/10 transition-colors hover:bg-white/20 sm:right-4 md:h-12 md:w-12'
+            aria-label='Next slide'
           >
-            ›
+            <ChevronRightIcon className='h-5 w-5 md:h-6 md:w-6' />
           </button>
         )}
       </div>
 
       {/* Bottom bar: download */}
-      <div className='flex shrink-0 items-center justify-center p-4' onClick={stop}>
+      <div
+        className='flex shrink-0 flex-col items-center justify-center gap-2 p-4'
+        onClick={stop}
+      >
         <button
           onClick={handleDownloadOne}
-          className='btn-grad flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition-[box-shadow,transform] hover:-translate-y-0.5'
+          disabled={downloading}
+          className='btn-grad flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition-[box-shadow,transform] hover:-translate-y-0.5 disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60'
         >
           <DownloadIcon className='h-4 w-4' />
-          Download image
+          {downloading
+            ? 'Downloading…'
+            : isVideo
+              ? 'Download video'
+              : 'Download image'}
         </button>
+        {downloadError && (
+          <p role='status' className='text-xs text-rose-300'>
+            {downloadError}
+          </p>
+        )}
       </div>
     </div>,
     document.body,

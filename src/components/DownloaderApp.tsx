@@ -28,6 +28,7 @@ import {
   getImagePlaceholderBase64,
   InstagramIcon,
   MusicIcon,
+  PlayIcon,
   SpinnerIcon,
   TikTokIcon,
   TrashIcon,
@@ -508,6 +509,33 @@ function ResultsSkeleton() {
       </div>
     </Surface>
   )
+}
+
+/**
+ * A gallery tile that fails to load, once.
+ *
+ * These are signed CDN URLs behind our own proxy, and a carousel asks for every
+ * one of them at the same moment — a post whose slides load individually can
+ * still drop two of them to a throttle. Observed live: three slides requested
+ * together, one arrived, and the other two sat as grey placeholders while the
+ * exact same URLs answered 200 a second later.
+ *
+ * So the first failure is retried once with a cache-busting parameter, and only
+ * the second falls back. A clip falls back to a plain dark tile rather than the
+ * picture placeholder, which would put a "no image" graphic under a play badge.
+ */
+function retryThumbnailOnce(kind?: 'image' | 'video') {
+  return (event: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = event.currentTarget
+    if (img.dataset.retried) {
+      if (kind === 'video') img.style.visibility = 'hidden'
+      else img.src = getImagePlaceholderBase64()
+      return
+    }
+    img.dataset.retried = '1'
+    const separator = img.src.includes('?') ? '&' : '?'
+    img.src = `${img.src}${separator}r=1`
+  }
 }
 
 export function DownloaderApp() {
@@ -1192,7 +1220,7 @@ export function DownloaderApp() {
     if (selectedImages.length === 0) {
       dispatch({
         type: 'SET_MESSAGE',
-        payload: 'Please select at least one image to download',
+        payload: `Pick at least one of the ${galleryNoun} first`,
       })
       return
     }
@@ -1200,7 +1228,12 @@ export function DownloaderApp() {
     dispatch({ type: 'SET_DOWNLOADING_IMAGES', payload: true })
 
     try {
-      const imageUrls = selectedImages.map((img) => img.url)
+      // Kind travels with the URL: the route names a clip `.mp4` and sends it
+      // through the video proxy, where a still gets `.jpg` and the image proxy.
+      const items = selectedImages.map((img) => ({
+        url: img.url,
+        kind: img.kind ?? 'image',
+      }))
 
       if (state.downloadImagesAsZip) {
         dispatch({ type: 'SET_PROGRESS', payload: 0 })
@@ -1210,7 +1243,7 @@ export function DownloaderApp() {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            imageUrls,
+            items,
             title: state.videoMetadata.title,
           }),
         })
@@ -1298,7 +1331,7 @@ export function DownloaderApp() {
 
         dispatch({
           type: 'SET_MESSAGE',
-          payload: `${selectedImages.length} image(s) downloaded as ZIP! 🗜️`,
+          payload: `${selectedImages.length} ${galleryNoun} downloaded as ZIP! 🗜️`,
         })
         dispatch({ type: 'SET_URL', payload: '' })
       } else {
@@ -1307,7 +1340,7 @@ export function DownloaderApp() {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ imageUrls }),
+          body: JSON.stringify({ items }),
         })
 
         if (!response.ok) {
@@ -1336,7 +1369,10 @@ export function DownloaderApp() {
               platform: state.videoMetadata?.platform,
               author: state.videoMetadata?.author,
               title: state.videoMetadata?.title,
-              ext: 'jpg',
+              // The route already worked out what each entry is; naming a clip
+              // `.jpg` here was how a carousel's video reached the disk as a
+              // file nothing would play.
+              ext: imageData.ext || 'jpg',
               index: i + 1,
               total: totalImages,
             })
@@ -1361,13 +1397,21 @@ export function DownloaderApp() {
       console.error('Image download failed:', error)
       dispatch({
         type: 'SET_MESSAGE',
-        payload: 'Failed to download images',
+        payload: `Could not save those ${galleryNoun} — the links may have expired. Paste the post again to refresh them.`,
       })
     } finally {
       dispatch({ type: 'SET_DOWNLOADING_IMAGES', payload: false })
       dispatch({ type: 'SET_PROGRESS', payload: null })
     }
   }
+
+  // A carousel can mix stills and clips, so the gallery cannot call everything
+  // in it an image. "Items" only appears when there is actually a clip among
+  // them — an all-photo post keeps the word people expect.
+  const galleryHasVideo = (state.videoMetadata?.images ?? []).some(
+    (item) => item.kind === 'video',
+  )
+  const galleryNoun = galleryHasVideo ? 'items' : 'images'
 
   const toggleImageGallery = () => {
     dispatch({ type: 'TOGGLE_IMAGE_GALLERY' })
@@ -2092,8 +2136,8 @@ export function DownloaderApp() {
                     >
                       <span className='relative'>
                         {state.showImageGallery
-                          ? 'Hide images'
-                          : `Show images (${state.videoMetadata.images.length})`}
+                          ? `Hide ${galleryNoun}`
+                          : `Show ${galleryNoun} (${state.videoMetadata.images.length})`}
                       </span>
                     </button>
 
@@ -2106,7 +2150,7 @@ export function DownloaderApp() {
                       <div className='animate-section-in space-y-3 px-1'>
                         <div className='flex items-center justify-between bg-white/[0.03] border border-white/[0.08] rounded-lg p-3'>
                           <span className='text-white text-sm'>
-                            Select images to download:
+                            Select {galleryNoun} to download:
                           </span>
                           <div className='flex space-x-2'>
                             <button
@@ -2143,28 +2187,48 @@ export function DownloaderApp() {
                               <button
                                 type='button'
                                 onClick={() => setLightboxIndex(index)}
-                                className={`flex aspect-square w-full cursor-zoom-in items-center justify-center overflow-hidden rounded-xl bg-black/30 ring-inset transition duration-200 ${
+                                className={`flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl bg-black/30 ring-inset transition duration-200 ${
+                                  image.kind === 'video'
+                                    ? 'cursor-pointer'
+                                    : 'cursor-zoom-in'
+                                } ${
                                   image.selected
                                     ? 'ring-2 ring-cyan-400'
                                     : 'ring-1 ring-white/10 hover:ring-2 hover:ring-white/60'
                                 }`}
-                                aria-label={`Open image ${index + 1} full size`}
+                                aria-label={
+                                  image.kind === 'video'
+                                    ? `Play video ${index + 1}`
+                                    : `Open image ${index + 1} full size`
+                                }
                               >
                                 {/* object-contain shows the whole image (never
                                     cropped). No hover scale — scaling a
                                     contained image past the cell would clip it
                                     (overflow-hidden) and look cropped on hover. */}
                                 <img
-                                  src={image.thumbnail}
-                                  alt={`Slideshow image ${index + 1}`}
+                                  src={image.thumbnail || image.url}
+                                  alt={
+                                    image.kind === 'video'
+                                      ? `Cover frame of video ${index + 1}`
+                                      : `Slide ${index + 1}`
+                                  }
                                   className='h-full w-full object-contain'
                                   loading='lazy'
                                   decoding='async'
-                                  onError={(e) => {
-                                    e.currentTarget.src =
-                                      getImagePlaceholderBase64()
-                                  }}
+                                  onError={retryThumbnailOnce(image.kind)}
                                 />
+                                {/* A clip has to look like one before it is
+                                    opened: without this a video slide is a
+                                    still frame in a grid of stills, and the
+                                    only way to find out was to tap it. */}
+                                {image.kind === 'video' && (
+                                  <span className='pointer-events-none absolute inset-0 flex items-center justify-center'>
+                                    <span className='flex h-11 w-11 items-center justify-center rounded-full bg-black/55 text-white ring-1 ring-white/25 backdrop-blur-[2px] transition-transform duration-200 group-hover:scale-110'>
+                                      <PlayIcon className='ml-0.5 h-5 w-5' />
+                                    </span>
+                                  </span>
+                                )}
                               </button>
 
                               <button
@@ -2176,8 +2240,8 @@ export function DownloaderApp() {
                                 aria-pressed={image.selected}
                                 aria-label={
                                   image.selected
-                                    ? `Deselect image ${index + 1}`
-                                    : `Select image ${index + 1}`
+                                    ? `Deselect item ${index + 1}`
+                                    : `Select item ${index + 1}`
                                 }
                                 className={`absolute top-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-full border-2 backdrop-blur-sm transition-all duration-200 ${
                                   image.selected
@@ -2195,7 +2259,9 @@ export function DownloaderApp() {
                               </div>
 
                               <div className='pointer-events-none absolute inset-x-1.5 bottom-1.5 rounded bg-black/40 px-1.5 py-0.5 text-center text-[10px] text-white/80 opacity-0 transition-opacity group-hover:opacity-100'>
-                                Click to preview
+                                {image.kind === 'video'
+                                  ? 'Click to play'
+                                  : 'Click to preview'}
                               </div>
                             </div>
                           ))}
@@ -2224,8 +2290,8 @@ export function DownloaderApp() {
                           </div>
                           <p className='text-white/60 text-xs'>
                             {state.downloadImagesAsZip
-                              ? 'Images will be packaged into a single ZIP file'
-                              : 'Images will be downloaded individually'}
+                              ? `Selected ${galleryNoun} arrive as one ZIP file`
+                              : `Selected ${galleryNoun} download one by one`}
                           </p>
                         </div>
 
@@ -2248,7 +2314,7 @@ export function DownloaderApp() {
                             <>
                               <DownloadIcon className='flex-shrink-0 h-5 w-5' />
                               <span>
-                                Download Selected (
+                                Download selected (
                                 {state.videoMetadata?.images?.filter(
                                   (img) => img.selected,
                                 ).length || 0}

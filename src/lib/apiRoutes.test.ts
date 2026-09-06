@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { handleDownload, resolveCacheKey, resolveFailure } from './apiRoutes'
+import {
+  handleDownload,
+  handleImages,
+  resolveCacheKey,
+  resolveFailure,
+} from './apiRoutes'
 
 describe('resolveCacheKey', () => {
   it('produces equal keys for identical inputs', () => {
@@ -93,5 +98,71 @@ describe('resolveFailure', () => {
     const response = resolveFailure('a bare string', 'fallback')
     expect(response.status).toBe(500)
     await expect(response.json()).resolves.toEqual({ success: false, error: 'fallback' })
+  })
+})
+
+/**
+ * The gallery route names the file the browser will save and picks the proxy
+ * that will serve it. Both used to be hard-coded to "image", which is how a
+ * carousel's clip reached the disk as a `.jpg` nothing would play.
+ */
+describe('handleImages', () => {
+  const post = (body: unknown) =>
+    handleImages(
+      new Request('https://x.test/api/images', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    )
+
+  it('sends a clip through the video proxy and names it .mp4', async () => {
+    const response = await post({
+      title: 'Three clips!',
+      items: [
+        { url: 'https://cdn.example/a.jpg', kind: 'image' },
+        { url: 'https://cdn.example/b.mp4', kind: 'video' },
+      ],
+    })
+    const body = (await response.json()) as {
+      images: Array<{ url: string; filename: string; ext: string }>
+    }
+
+    expect(body.images[0].url).toBe(
+      `/api/image?url=${encodeURIComponent('https://cdn.example/a.jpg')}`,
+    )
+    expect(body.images[0].filename).toBe('three-clips_01.jpg')
+    expect(body.images[1].url).toBe(
+      `/api/video?url=${encodeURIComponent('https://cdn.example/b.mp4')}`,
+    )
+    expect(body.images[1].filename).toBe('three-clips_02.mp4')
+    expect(body.images[1].ext).toBe('mp4')
+  })
+
+  /** An entry can arrive already wrapped in either display proxy. */
+  it('unwraps a URL that is already proxied rather than double-proxying it', async () => {
+    const raw = 'https://cdn.example/b.mp4'
+    const response = await post({
+      items: [{ url: `/api/video?url=${encodeURIComponent(raw)}`, kind: 'video' }],
+    })
+    const body = (await response.json()) as { images: Array<{ url: string }> }
+    expect(body.images[0].url).toBe(`/api/video?url=${encodeURIComponent(raw)}`)
+  })
+
+  /** The shape every caller sent before a gallery could hold a clip. */
+  it('still accepts a plain imageUrls array as all-stills', async () => {
+    const response = await post({
+      imageUrls: ['https://cdn.example/a.jpg', 'https://cdn.example/b.jpg'],
+    })
+    const body = (await response.json()) as {
+      images: Array<{ filename: string; kind: string }>
+    }
+    expect(body.images).toHaveLength(2)
+    expect(body.images[0].kind).toBe('image')
+    expect(body.images[1].filename.endsWith('.jpg')).toBe(true)
+  })
+
+  it('rejects an empty request rather than answering with nothing', async () => {
+    expect((await post({ items: [] })).status).toBe(400)
+    expect((await post({})).status).toBe(400)
   })
 })
