@@ -325,6 +325,25 @@ function downloadManagerUrl(
   return null
 }
 
+/**
+ * The line under the YouTube embed.
+ *
+ * Three outcomes, not two. The middle one is new and is the whole reason this
+ * is a function rather than an inline ternary: YouTube now bot-blocks video
+ * extraction from datacenter addresses for most videos, but its iPhone client
+ * still hands over the audio track — so the common result is an embed you
+ * cannot save as video and CAN save as an MP3. Telling that visitor "direct
+ * download isn't available" would be pointing away from the working button
+ * sitting right underneath.
+ */
+function embedCaption(hasVideo: boolean, hasAudio: boolean): string {
+  if (hasVideo) return 'Preview via YouTube — use the buttons below to download.'
+  if (hasAudio) {
+    return 'Playing via YouTube. The video itself can’t be saved from here, but the audio can — grab the MP3 below.'
+  }
+  return 'Playing via YouTube — direct download isn’t available for this video.'
+}
+
 // Save an already-fetched body under our own filename: shared helper
 // (src/lib/blobSaver.ts), same technique this file used to hand-roll.
 
@@ -2094,9 +2113,7 @@ export function DownloaderApp() {
                     />
                   </div>
                   <p className='text-white/50 text-xs text-center'>
-                    {state.downloadUrl
-                      ? 'Preview via YouTube — use the buttons below to download.'
-                      : 'Playing via YouTube — direct download isn’t available for this video.'}
+                    {embedCaption(!!state.downloadUrl, !!state.audioUrl)}
                   </p>
                 </div>
               )}

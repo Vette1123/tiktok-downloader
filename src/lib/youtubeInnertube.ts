@@ -34,6 +34,37 @@
  * completely different IP (`206 Partial Content`, correct Content-Type), so
  * googlevideo is not binding them to the extracting address.
  *
+ * SECOND CLIENT — and the reason this file no longer delivers video. Re-probed
+ * from the same edge on 2026-09-07 across four videos, ANDROID_VR answers three
+ * of them `200` with `playabilityStatus: LOGIN_REQUIRED, "Sign in to confirm
+ * you're not a bot"` and no streaming data at all. (It also 403s outright with
+ * Google's "Sorry..." abuse page on roughly one call in six, but that is the
+ * smaller problem.) The single video that still works, `dQw4w9WgXcQ`, is the
+ * most-cached video on the internet and is not evidence about any other.
+ *
+ * No client fixes the video half. IOS, IOS_MUSIC, MWEB, TVHTML5,
+ * TVHTML5_SIMPLY_EMBEDDED_PLAYER, ANDROID_UNPLUGGED, ANDROID_TESTSUITE and
+ * WEB_CREATOR were all asked for the same blocked videos: every one is blocked,
+ * sign-in-walled, or — IOS, the only one that answers OK — adaptive-only. A
+ * muxed stream is what we need and ANDROID_VR is the only client that ever had
+ * one. So downloadYouTube falls through to Cobalt, and when that fails too, to
+ * the embed.
+ *
+ * IOS still earns its place, because two things were failing that did not have
+ * to be:
+ *
+ *   - `/api/subtitles` reads this same player response, so for most videos it
+ *     was telling supporters a public video "may be private or unavailable".
+ *   - The audio is right there. IOS returns unsigned audio-only URLs for
+ *     exactly the videos ANDROID_VR refuses, so the embed fallback can still
+ *     hand over an MP3 instead of a dead end.
+ *
+ * Verified the way the ANDROID_VR probe above was — extracted from the edge,
+ * then fetched from a different address: itag 140 (`audio/mp4`, AAC 130 kbps,
+ * the one `pickAudio` wants) gives `206 audio/mp4`, and a caption `baseUrl`
+ * gives the real transcript XML. The second call is spent only when the first
+ * fails, and the loop stops at the first usable answer.
+ *
  * KNOWN CEILING: 360p. YouTube only publishes one muxed progressive stream
  * (itag 18) — everything higher is adaptive, i.e. separate video and audio
  * tracks that have to be muxed back together with ffmpeg. We cannot mux on
@@ -48,24 +79,58 @@ import type { VideoData } from './types'
 const PLAYER_ENDPOINT = 'https://www.youtube.com/youtubei/v1/player'
 
 /**
- * The Oculus YouTube app. Version string is sent verbatim; YouTube rejects
- * clients it does not recognise, so this is a real released version rather than
- * something plausible-looking.
+ * One impersonated client. Version strings are sent verbatim; YouTube rejects
+ * clients it does not recognise, so these are real released versions rather
+ * than something plausible-looking, and the user-agent has to match the client
+ * it claims to be.
  */
-const ANDROID_VR_CLIENT = {
-  clientName: 'ANDROID_VR',
-  clientVersion: '1.62.27',
-  androidSdkVersion: 32,
-  deviceMake: 'Oculus',
-  deviceModel: 'Quest 3',
-  osName: 'Android',
-  osVersion: '12',
-  hl: 'en',
-  gl: 'US',
+interface InnertubeClient {
+  name: string
+  context: Record<string, string | number>
+  userAgent: string
 }
 
-const ANDROID_VR_UA =
-  'com.google.android.apps.youtube.vr.oculus/1.62.27 (Linux; U; Android 12; GB) gzip'
+/** The Oculus YouTube app. The only client that still publishes a muxed stream. */
+const ANDROID_VR: InnertubeClient = {
+  name: 'ANDROID_VR',
+  context: {
+    clientName: 'ANDROID_VR',
+    clientVersion: '1.62.27',
+    androidSdkVersion: 32,
+    deviceMake: 'Oculus',
+    deviceModel: 'Quest 3',
+    osName: 'Android',
+    osVersion: '12',
+    hl: 'en',
+    gl: 'US',
+  },
+  userAgent:
+    'com.google.android.apps.youtube.vr.oculus/1.62.27 (Linux; U; Android 12; GB) gzip',
+}
+
+/** The iPhone app. Adaptive formats only, but answers when ANDROID_VR is blocked. */
+const IOS: InnertubeClient = {
+  name: 'IOS',
+  context: {
+    clientName: 'IOS',
+    clientVersion: '20.10.4',
+    deviceMake: 'Apple',
+    deviceModel: 'iPhone16,2',
+    osName: 'iPhone',
+    osVersion: '18.3.2.22D82',
+    hl: 'en',
+    gl: 'US',
+  },
+  userAgent:
+    'com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X; en_US)',
+}
+
+/**
+ * Tried in order, first usable answer wins. ANDROID_VR leads because it is the
+ * only one carrying a muxed progressive stream; IOS is the standby for the
+ * calls where ANDROID_VR is rate-limited.
+ */
+const CLIENTS: readonly InnertubeClient[] = [ANDROID_VR, IOS]
 
 /** Give up rather than hold a Worker subrequest open indefinitely. */
 const TIMEOUT_MS = 12_000
@@ -146,14 +211,9 @@ function pickAudio(data: InnertubePlayerResponse): InnertubeFormat | undefined {
   return preferred.sort(byBitrateDesc)[0]
 }
 
-/**
- * One Innertube player call. Shared by stream extraction and the captions
- * path, which read different halves of the same response.
- *
- * Returns null for anything unusable — non-OK playability, network error,
- * non-200 — so callers treat it as "try the next source", never as a throw.
- */
-export async function fetchPlayerResponse(
+/** One player call as one client. Null means "this client cannot serve it". */
+async function askClient(
+  client: InnertubeClient,
   videoId: string,
 ): Promise<InnertubePlayerResponse | null> {
   try {
@@ -165,12 +225,12 @@ export async function fetchPlayerResponse(
         // as UNPLAYABLE even when the stream is otherwise available.
         contentCheckOk: true,
         racyCheckOk: true,
-        context: { client: ANDROID_VR_CLIENT },
+        context: { client: client.context },
       },
       {
         headers: {
           'Content-Type': 'application/json',
-          'User-Agent': ANDROID_VR_UA,
+          'User-Agent': client.userAgent,
           Accept: 'application/json',
         },
         timeout: TIMEOUT_MS,
@@ -184,6 +244,30 @@ export async function fetchPlayerResponse(
   } catch {
     return null
   }
+}
+
+/**
+ * One usable Innertube player response. Shared by stream extraction and the
+ * captions path, which read different halves of it.
+ *
+ * Asks each client in turn and returns the first that answers usably. Returns
+ * null only when every one of them failed — a network error, a non-200 (which
+ * on this host usually means Google's abuse page rather than JSON), or a
+ * playability status that is not OK because the video really is private,
+ * age-gated, region-blocked or removed. Callers treat null as "try the next
+ * source", never as a throw.
+ *
+ * The loop stops at the first success, so the common path still costs exactly
+ * one subrequest.
+ */
+export async function fetchPlayerResponse(
+  videoId: string,
+): Promise<InnertubePlayerResponse | null> {
+  for (const client of CLIENTS) {
+    const data = await askClient(client, videoId)
+    if (data) return data
+  }
+  return null
 }
 
 /**
@@ -215,7 +299,20 @@ export async function tryYouTubeInnertube(
   }
 
   const progressive = pickProgressive(data)
-  if (!progressive?.url) return null
+  // No muxed stream — which since the IOS fallback is the ordinary outcome, not
+  // an odd one. Report what there IS rather than nothing: `downloadUrl` stays
+  // empty, so no caller can mistake an adaptive video track for a playable
+  // file, but the audio comes back for whoever wants it. downloadYouTube uses
+  // it to put a working MP3 button beside the embed, which would otherwise cost
+  // a second player call for a response we are already holding.
+  if (!progressive?.url) {
+    if (!audio?.url) return null
+    return {
+      ...baseVideoData(data, videoId, canonicalUrl),
+      downloadUrl: '',
+      musicUrl: audio.url,
+    }
+  }
 
   return {
     ...baseVideoData(data, videoId, canonicalUrl),

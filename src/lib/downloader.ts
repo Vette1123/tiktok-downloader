@@ -2047,10 +2047,19 @@ export class Downloader {
     //    datacenter IP, and carries its own title/author/thumbnail so no
     //    separate metadata fetch is needed. Capped at 360p for video; see
     //    youtubeInnertube.ts for why, and why ANDROID_VR specifically.
-    if (videoId) {
-      const viaInnertube = await tryYouTubeInnertube(videoId, canonical, this.mode)
-      if (viaInnertube) return viaInnertube
-    }
+    //
+    //    It can also answer with audio and no video, and increasingly does:
+    //    ANDROID_VR (the only client publishing a muxed stream) is bot-blocked
+    //    from here for most videos, and the IOS client that answers in its
+    //    place is adaptive-only. That half-answer is worth keeping rather than
+    //    discarding — the embed fallback at the bottom hands it to the visitor
+    //    as an MP3 — and keeping it costs nothing, because it rode along on the
+    //    player call we already made.
+    const viaInnertube = videoId
+      ? await tryYouTubeInnertube(videoId, canonical, this.mode)
+      : null
+    if (viaInnertube?.downloadUrl) return viaInnertube
+    if (this.mode === 'audio' && viaInnertube?.musicUrl) return viaInnertube
 
     const meta = await this.fetchYouTubeMeta(videoId, canonical)
 
@@ -2088,22 +2097,32 @@ export class Downloader {
       }
     }
 
-    // No extractor could produce a downloadable stream — YouTube bot-blocks
-    // extraction from datacenter IPs (the public Cobalt instance and the Vercel
-    // deploy alike), and yt-dlp isn't available here. Rather than failing
-    // outright, degrade gracefully to the official embed player so the video
-    // stays viewable; the UI renders the embed and hides the (unavailable)
-    // download/audio buttons. Real downloads need yt-dlp (run it locally).
+    // No extractor could produce a downloadable VIDEO. That is now the common
+    // case rather than the rare one: probed from a Cloudflare edge, ANDROID_VR
+    // answers most videos `LOGIN_REQUIRED — "Sign in to confirm you're not a
+    // bot"`, no other client publishes a muxed progressive stream at all, and
+    // the public Cobalt instances answer `error.api.youtube.login`. Muxing the
+    // adaptive tracks back together needs ffmpeg, which workerd cannot run, so
+    // full video here genuinely needs yt-dlp on a residential IP.
+    //
+    // The audio is a different story: the IOS client still answers OK with
+    // unsigned audio-only URLs for the same videos ANDROID_VR refuses, and step
+    // 2 above already kept that half-answer. Handing it over turns a dead end
+    // ("playable, not downloadable") into a finished MP3 — which for a music
+    // video is usually what the visitor came for.
     if (videoId) {
       return {
         id: videoId,
-        title: meta.title || 'YouTube Video',
+        title: meta.title || viaInnertube?.title || 'YouTube Video',
         url: canonical,
-        thumbnail: meta.thumbnail || '',
-        duration: 0,
-        author: meta.author || 'YouTube',
+        thumbnail: meta.thumbnail || viaInnertube?.thumbnail || '',
+        duration: viaInnertube?.duration ?? 0,
+        author: meta.author || viaInnertube?.author || 'YouTube',
         description: '',
         downloadUrl: '',
+        // Surfaces as `audioUrl` in the payload (see handleDownload), so the
+        // card shows a working MP3 button beside the embed.
+        musicUrl: viaInnertube?.musicUrl,
         embedUrl: `https://www.youtube-nocookie.com/embed/${videoId}`,
       }
     }

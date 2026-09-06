@@ -395,15 +395,23 @@ function buildChecks() {
 
         // The distinction that matters for YouTube: a real extraction versus
         // the embed-only degradation. Both set success=true, so assert on
-        // something only extraction produces. Duration comes from Innertube's
-        // videoDetails; the embed fallback hardcodes 0.
+        // something only extraction produces — the bytes.
+        //
+        // This used to assert `metadata.duration > 0`, on the reasoning that
+        // duration comes from Innertube's videoDetails and the embed fallback
+        // hardcodes 0. That was a proxy for the extractor, not for the claim,
+        // and it broke the day the extractor changed: when ANDROID_VR is
+        // rate-limited the resolve falls through to Cobalt, which serves a
+        // perfectly good 720p tunnel with metadata enriched from oEmbed — and
+        // oEmbed carries no duration. The check went red for two full runs
+        // while production was working better than the check expected.
+        //
+        // Reading a kilobyte of the stream asserts the actual promise instead,
+        // and holds whichever extractor won.
         if (payload.metadata.embedUrl && !payload.downloadUrl) {
-          return 'fell back to embed-only — Innertube extraction failed'
+          return 'fell back to embed-only — no extractor produced a stream'
         }
-        if (!payload.metadata.duration) {
-          return 'metadata.duration is 0 — looks like the embed fallback, not a real extraction'
-        }
-        return null
+        return checkStreamIsVideo(payload.downloadUrl)
       },
     },
 
@@ -713,6 +721,33 @@ function describeBytes(bytes) {
 }
 
 /**
+ * Pull the head of a resolved stream and say whether it is really a video.
+ * Returns null when it is, or the failure line when it is not — the shape every
+ * `check` in this file returns.
+ *
+ * Shared by the YouTube check and the platform probes, which had drifted into
+ * asserting different things about the same promise: the probes read bytes, and
+ * YouTube read `metadata.duration` and went red the moment a different
+ * extractor (with equally good output) started answering.
+ */
+async function checkStreamIsVideo(downloadUrl) {
+  if (!downloadUrl) return 'no downloadUrl to check'
+  const target = downloadUrl.startsWith('/') ? `${BASE}${downloadUrl}` : downloadUrl
+  const head = await fetch(target, {
+    headers: { Range: 'bytes=0-1023' },
+    signal: AbortSignal.timeout(60_000),
+  })
+  if (head.status !== 200 && head.status !== 206) {
+    return `the resolved stream answered ${head.status}`
+  }
+  const bytes = new Uint8Array(await head.arrayBuffer())
+  if (!looksLikeVideoBytes(bytes)) {
+    return `a video link downloaded ${describeBytes(bytes)}, not a video`
+  }
+  return null
+}
+
+/**
  * A probe is not "success: true".
  *
  * An extractor that has lost its media path still answers 200 with a title
@@ -759,21 +794,7 @@ function platformProbeCheck(probe) {
           (meta.images ?? []).length
         } image(s) and no downloadUrl`
       }
-      const target = payload.downloadUrl.startsWith('/')
-        ? `${BASE}${payload.downloadUrl}`
-        : payload.downloadUrl
-      const head = await fetch(target, {
-        headers: { Range: 'bytes=0-1023' },
-        signal: AbortSignal.timeout(60_000),
-      })
-      if (head.status !== 200 && head.status !== 206) {
-        return `the resolved stream answered ${head.status}`
-      }
-      const bytes = new Uint8Array(await head.arrayBuffer())
-      if (!looksLikeVideoBytes(bytes)) {
-        return `a video link downloaded ${describeBytes(bytes)}, not a video`
-      }
-      return null
+      return checkStreamIsVideo(payload.downloadUrl)
     },
   }
 }
