@@ -82,6 +82,13 @@ export const PRO_BENEFITS: ProBenefit[] = [
     body: 'Switch it on and a pasted link starts downloading the moment it resolves. Carousels still wait for you to pick.',
   },
   {
+    // The bytes are identical to a free visitor's. What the support buys is
+    // the evening otherwise spent typing all of this back in by hand — which
+    // is the only kind of line allowed on this list.
+    title: 'MP3s that know what they are',
+    body: 'Extracted audio arrives tagged — track, artist, album and cover art written in, so a music library files it instead of showing a filename.',
+  },
+  {
     title: 'Both files, one tap',
     body: 'Where a post has a video and a separate soundtrack, save the MP4 and the MP3 together instead of resolving it twice.',
   },

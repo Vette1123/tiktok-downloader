@@ -73,6 +73,8 @@ export type TKey =
   | 'thumbnailUnavailable'
   | 'langLabel'
   | 'tryAgain'
+  | 'sendToApp'
+  | 'sendFailed'
   | 'filterRecent'
   | 'importBadFile'
   | 'importUnreadable'
@@ -112,6 +114,8 @@ const en: Record<TKey, string> = {
   thumbnailUnavailable: 'Thumbnail unavailable',
   langLabel: 'Language',
   tryAgain: 'Try again',
+  sendToApp: 'Send to an app',
+  sendFailed: 'Could not send it',
   filterRecent: 'Filter recent…',
   importBadFile: 'That file is not a history export.',
   importUnreadable: 'Could not read that file.',
@@ -152,6 +156,8 @@ const es: Partial<Record<TKey, string>> = {
   thumbnailUnavailable: 'Miniatura no disponible',
   langLabel: 'Idioma',
   tryAgain: 'Reintentar',
+  sendToApp: 'Enviar a una app',
+  sendFailed: 'No se pudo enviar',
   filterRecent: 'Filtrar recientes…',
   importBadFile: 'Ese archivo no es una exportación del historial.',
   importUnreadable: 'No se pudo leer ese archivo.',
@@ -192,6 +198,8 @@ const pt: Partial<Record<TKey, string>> = {
   thumbnailUnavailable: 'Miniatura indisponível',
   langLabel: 'Idioma',
   tryAgain: 'Tentar novamente',
+  sendToApp: 'Enviar para um app',
+  sendFailed: 'Não foi possível enviar',
   filterRecent: 'Filtrar recentes…',
   importBadFile: 'Esse arquivo não é uma exportação do histórico.',
   importUnreadable: 'Não foi possível ler esse arquivo.',
@@ -232,6 +240,8 @@ const id: Partial<Record<TKey, string>> = {
   thumbnailUnavailable: 'Thumbnail tidak tersedia',
   langLabel: 'Bahasa',
   tryAgain: 'Coba lagi',
+  sendToApp: 'Kirim ke aplikasi',
+  sendFailed: 'Tidak bisa mengirim',
   filterRecent: 'Saring riwayat…',
   importBadFile: 'Berkas itu bukan hasil ekspor riwayat.',
   importUnreadable: 'Tidak dapat membaca berkas itu.',
@@ -272,6 +282,8 @@ const ar: Partial<Record<TKey, string>> = {
   thumbnailUnavailable: 'الصورة المصغرة غير متوفرة',
   langLabel: 'اللغة',
   tryAgain: 'حاول مجددًا',
+  sendToApp: 'إرسال إلى تطبيق',
+  sendFailed: 'تعذّر الإرسال',
   filterRecent: 'تصفية السجل…',
   importBadFile: 'هذا الملف ليس نسخة مُصدَّرة من السجل.',
   importUnreadable: 'تعذّرت قراءة هذا الملف.',

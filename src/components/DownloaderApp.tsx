@@ -86,6 +86,7 @@ import {
   subscribeProgress,
 } from '@/lib/downloadProgress'
 import {
+  useAudioTags,
   useAutoSave,
   useClipboardWatch,
   useFilenameTemplate,
@@ -106,6 +107,17 @@ import {
   type HistoryEntry,
 } from '@/lib/history'
 import { saveBlob } from '@/lib/blobSaver'
+import { canShareFile, fileFromBlob, shareFile } from '@/lib/shareFile'
+import { audioTagsFor } from '@/lib/audioTags'
+import { bytesFromDataUrl, tagMp3 } from '@/lib/id3'
+import {
+  forgetSaved,
+  getSavedServerSnapshot,
+  getSavedSnapshot,
+  noteShareFailed,
+  rememberSaved,
+  subscribeSaved,
+} from '@/lib/lastSaved'
 import { autoSaveTarget } from '@/lib/autoSave'
 import { clipboardDecision } from '@/lib/clipboardWatch'
 import { savedAgo } from '@/lib/savedAgo'
@@ -148,6 +160,11 @@ function extractAllUrls(s: string): string[] {
 // How big a body we're willing to hold in memory to show a percentage. Past
 // this we hand the file to the browser's own download manager instead, which
 // streams to disk at no memory cost — a 300 MB blob is a tab crash on mobile.
+// Cover art written into an MP3's tags. 640px is what a phone's lock screen
+// and a car head unit actually display; larger only inflates every file.
+const COVER_ART_PX = 640
+const COVER_ART_QUALITY = 0.82
+
 const MAX_IN_MEMORY_DOWNLOAD_BYTES = 80 * 1024 * 1024
 
 // A transfer we project to take longer than this also goes to the download
@@ -255,13 +272,22 @@ function isTooSlowToStream(
 // isSuccessMessage — the banner's retry offer needs the same predicate the
 // promo slot does, and one copy keeps them from drifting apart.
 
-// Capture a tiny, self-contained snapshot of a thumbnail for the Recent list.
-// Loads the image through our same-origin /api/image proxy (which sets CORS +
-// the right Referer for hotlink-gated CDNs), downscales it onto a canvas, and
-// returns a ~96px JPEG data URL. Storing the pixels means Recent thumbnails
-// never go blank later when a signed CDN URL expires or blocks hotlinking.
+// Capture a self-contained snapshot of a thumbnail. Loads the image through our
+// same-origin /api/image proxy (which sets CORS + the right Referer for
+// hotlink-gated CDNs), downscales it onto a canvas, and returns a JPEG data URL.
+// Storing the pixels means Recent thumbnails never go blank later when a signed
+// CDN URL expires or blocks hotlinking.
 // Returns '' on any failure so the caller can fall back to a platform tile.
-async function snapshotImage(srcUrl: string): Promise<string> {
+//
+// Two callers at two sizes: a ~96px tile for the Recent list, and cover art for
+// an MP3's tags. Re-encoding through the canvas is what makes the second one
+// possible at all — thumbnails arrive as WebP as often as JPEG, and an ID3
+// picture frame has to declare one type and mean it.
+async function snapshotImage(
+  srcUrl: string,
+  max = 96,
+  quality = 0.72,
+): Promise<string> {
   if (!srcUrl || typeof document === 'undefined') return ''
   const src = srcUrl.startsWith('/')
     ? srcUrl
@@ -273,7 +299,6 @@ async function snapshotImage(srcUrl: string): Promise<string> {
     img.onload = () => {
       window.clearTimeout(timer)
       try {
-        const max = 96
         const scale =
           Math.min(max / img.naturalWidth, max / img.naturalHeight, 1) || 1
         const w = Math.max(1, Math.round(img.naturalWidth * scale))
@@ -284,7 +309,7 @@ async function snapshotImage(srcUrl: string): Promise<string> {
         const ctx = canvas.getContext('2d')
         if (!ctx) return resolve('')
         ctx.drawImage(img, 0, 0, w, h)
-        resolve(canvas.toDataURL('image/jpeg', 0.72))
+        resolve(canvas.toDataURL('image/jpeg', quality))
       } catch {
         resolve('') // tainted canvas / decode failure — fall back to a tile
       }
@@ -501,6 +526,11 @@ async function downloadDirectWithProgress(
   url: string,
   filename: string,
   onProgress: (pct: number | null) => void,
+  // What to do with the finished bytes. Defaulted rather than required so the
+  // only reason to pass it is the one the component has: it also wants to keep
+  // the file around for the share sheet, and to write tags into an MP3 — which
+  // is why this may be asynchronous.
+  deliver: (blob: Blob, filename: string) => void | Promise<void> = saveBlob,
 ): Promise<DirectDownloadOutcome> {
   let oversize = false
   try {
@@ -515,7 +545,7 @@ async function downloadDirectWithProgress(
       if (slow) oversize = true
       return slow
     })
-    saveBlob(blob, filename)
+    await deliver(blob, filename)
     return 'saved'
   } catch {
     // Cross-origin block, an expired URL, a dropped connection, or our own
@@ -707,6 +737,37 @@ export function DownloaderApp() {
    * is the batch queue rather than a sentence.
    */
   const [pasteAdvice, setPasteAdvice] = useState<LinkAdvice | null>(null)
+  /**
+   * The file this visitor just saved, kept so it can be sent somewhere.
+   *
+   * On a phone, saving is only half of what somebody came to do — the other
+   * half is putting the file in a chat. The share sheet does that, but only
+   * from inside a live click: Safari's user activation expires in seconds, so
+   * sharing at the end of a download is already too late. Holding the bytes
+   * means the button that appears afterwards shares instantly, still inside
+   * its own gesture.
+   *
+   * Lives in a module store rather than component state because the auto-save
+   * effect starts a download on its own, and a `useState` written from there is
+   * the cascading-render shape React's lint rule stops. See lib/lastSaved.
+   */
+  const lastSaved = useSyncExternalStore(
+    subscribeSaved,
+    getSavedSnapshot,
+    getSavedServerSnapshot,
+  )
+  /**
+   * Drop the current result — the reducer's half and the held file with it.
+   *
+   * One function rather than the three bare dispatches this replaces: the held
+   * bytes are as much a part of "the current result" as its title is, and
+   * forgetting them in one of the three places would keep up to 80 MB alive for
+   * the rest of the session and offer to share it from the next card.
+   */
+  const resetResult = useCallback(() => {
+    dispatch({ type: 'RESET_DOWNLOAD_STATE' })
+    forgetSaved()
+  }, [])
   const inputRef = useRef<HTMLInputElement>(null)
   const pasteBarRef = useRef<HTMLDivElement>(null)
   // Persisted in localStorage and mutated from several places, so it is read
@@ -770,6 +831,8 @@ export function DownloaderApp() {
   const autoSave = useAutoSave()
   // Whether the card offers the video and the MP3 in one tap.
   const saveBothAllowed = useSaveBoth()
+  // Whether a saved MP3 carries its title, artist and cover art.
+  const tagAudio = useAudioTags()
   // Core-flow copy follows the chosen language (footer picker); deep copy —
   // hints, FAQ, legal — stays English by design. See lib/i18n.ts.
   const t = useT()
@@ -976,7 +1039,7 @@ export function DownloaderApp() {
     setPasteAdvice(null)
 
     dispatch({ type: 'SET_LOADING', payload: true })
-    dispatch({ type: 'RESET_DOWNLOAD_STATE' })
+    resetResult()
 
     try {
       const data = await resolveOne(target)
@@ -1035,7 +1098,7 @@ export function DownloaderApp() {
   // summary line reports how many landed.
   const processBatch = async (urls: string[]) => {
     setUrlError(null)
-    dispatch({ type: 'RESET_DOWNLOAD_STATE' })
+    resetResult()
     dispatch({ type: 'SET_LOADING', payload: true })
     setBatch({ done: 0, total: urls.length, saved: 0 })
 
@@ -1282,10 +1345,10 @@ export function DownloaderApp() {
   const clearResult = useCallback((): boolean => {
     if (!state.originalUrl && !state.message) return false
     if (isResolvingOrDownloading(state)) return false
-    dispatch({ type: 'RESET_DOWNLOAD_STATE' })
+    resetResult()
     setUrlError(null)
     return true
-  }, [state])
+  }, [state, resetResult])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1380,6 +1443,86 @@ export function DownloaderApp() {
     handleProcess(found)
   }
 
+  /**
+   * Write a finished download to disk and hold on to it for the share sheet.
+   *
+   * The single delivery point for every media save in this component, so the
+   * "send it somewhere" button cannot end up offered for one kind of file and
+   * missing for another — which is exactly what happened while the anchor dance
+   * was hand-rolled in three places instead of living in `saveBlob`.
+   */
+  const deliver = (blob: Blob, filename: string) => {
+    saveBlob(blob, filename)
+    rememberSaved(fileFromBlob(blob, filename))
+  }
+
+  /**
+   * Cover art for an MP3's tags, re-encoded from the card's own thumbnail.
+   *
+   * Same canvas path the Recent list uses, at a size a music player will
+   * actually show. Going through the canvas is not just resizing: thumbnails
+   * arrive as WebP as often as JPEG, and a picture frame has to declare one
+   * type and be telling the truth.
+   */
+  const coverArt = async (): Promise<Uint8Array | undefined> => {
+    const src = state.videoMetadata?.thumbnail
+    if (!src) return undefined
+    const dataUrl = await snapshotImage(src, COVER_ART_PX, COVER_ART_QUALITY)
+    return bytesFromDataUrl(dataUrl) ?? undefined
+  }
+
+  /**
+   * Deliver audio, with its title, artist and cover written into it first.
+   *
+   * An extracted MP3 arrives anonymous: dropped into a music library it is a
+   * filename under nothing. Everything needed to fix that is already on the
+   * card, which is why this is a supporter feature about the evening saved
+   * rather than about the file — the bytes are identical either way, and
+   * `tagMp3` hands back the original untouched whenever the audio is not
+   * really an MP3 (the YouTube fallback re-serves an AAC track) or there is
+   * nothing worth writing.
+   */
+  const deliverAudio = async (blob: Blob, filename: string) => {
+    if (!tagAudio) {
+      deliver(blob, filename)
+      return
+    }
+    const tags = audioTagsFor(state.videoMetadata, state.originalUrl)
+    const coverJpeg = await coverArt()
+    deliver(await tagMp3(blob, { ...tags, coverJpeg }), filename)
+  }
+
+  // The post's own title, so the sheet's draft message says what the file is
+  // rather than repeating the filename the OS already shows.
+  const shareTitle = state.videoMetadata?.title || 'Download'
+
+  /**
+   * Whether to offer the share sheet at all.
+   *
+   * Asked of the real file, because support depends on the browser, the OS and
+   * the file's type together — a desktop browser with `navigator.share` may
+   * still refuse an MP4, and a static feature check would put a button there
+   * that does nothing. Safe during prerender and on the first client render:
+   * the store holds nothing until something has actually been downloaded, so
+   * both renders agree on no button.
+   */
+  const canSendToApp =
+    !!lastSaved.file &&
+    canShareFile(
+      lastSaved.file,
+      shareTitle,
+      typeof navigator === 'undefined' ? undefined : navigator,
+    )
+
+  const handleSendToApp = async () => {
+    const file = lastSaved.file
+    if (!file) return
+    const outcome = await shareFile(file, shareTitle)
+    // A dismissal is a decision, not a fault — only a real failure gets said
+    // out loud, and it stays said until the next save replaces the file.
+    if (outcome === 'failed') noteShareFailed()
+  }
+
   const handleVideoDownload = async () => {
     if (!state.downloadUrl) return
 
@@ -1395,8 +1538,11 @@ export function DownloaderApp() {
       dispatch({ type: 'SET_DOWNLOADING', payload: true })
       dispatch({ type: 'SET_PROGRESS', payload: null })
       dispatch({ type: 'SET_MESSAGE', payload: t('preparingDownload') })
-      const outcome = await downloadDirectWithProgress(direct, filename, (p) =>
-        dispatch({ type: 'SET_PROGRESS', payload: p }),
+      const outcome = await downloadDirectWithProgress(
+        direct,
+        filename,
+        (p) => dispatch({ type: 'SET_PROGRESS', payload: p }),
+        deliver,
       )
       if (outcome === 'saved') {
         dispatch({ type: 'SET_DOWNLOADING', payload: false })
@@ -1445,10 +1591,7 @@ export function DownloaderApp() {
       const blob = await streamToBlob(response, (p) =>
         dispatch({ type: 'SET_PROGRESS', payload: p }),
       )
-      saveBlob(
-        blob,
-        nameFile('mp4'),
-      )
+      deliver(blob, nameFile('mp4'))
 
       dispatch({
         type: 'SET_MESSAGE',
@@ -1497,10 +1640,7 @@ export function DownloaderApp() {
       const blob = await streamToBlob(response, (p) =>
         dispatch({ type: 'SET_PROGRESS', payload: p }),
       )
-      saveBlob(
-        blob,
-        nameFile('mp4'),
-      )
+      deliver(blob, nameFile('mp4'))
 
       dispatch({
         type: 'SET_MESSAGE',
@@ -1536,8 +1676,11 @@ export function DownloaderApp() {
       dispatch({ type: 'SET_DOWNLOADING_AUDIO', payload: true })
       dispatch({ type: 'SET_PROGRESS', payload: null })
       dispatch({ type: 'SET_MESSAGE', payload: t('preparingDownload') })
-      const outcome = await downloadDirectWithProgress(direct, filename, (p) =>
-        dispatch({ type: 'SET_PROGRESS', payload: p }),
+      const outcome = await downloadDirectWithProgress(
+        direct,
+        filename,
+        (p) => dispatch({ type: 'SET_PROGRESS', payload: p }),
+        deliverAudio,
       )
       if (outcome === 'saved') {
         dispatch({ type: 'SET_DOWNLOADING_AUDIO', payload: false })
@@ -1581,10 +1724,7 @@ export function DownloaderApp() {
       const blob = await streamToBlob(response, (p) =>
         dispatch({ type: 'SET_PROGRESS', payload: p }),
       )
-      saveBlob(
-        blob,
-        nameFile('mp3'),
-      )
+      await deliverAudio(blob, nameFile('mp3'))
 
       dispatch({
         type: 'SET_MESSAGE',
@@ -1745,16 +1885,7 @@ export function DownloaderApp() {
               payload: 90 + Math.round(meta.percent * 0.1),
             }),
         )
-        const blobUrl = URL.createObjectURL(blob)
-
-        const link = document.createElement('a')
-        link.href = blobUrl
-        link.download = nameFile('zip')
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-
-        URL.revokeObjectURL(blobUrl)
+        deliver(blob, nameFile('zip'))
 
         dispatch({
           type: 'SET_MESSAGE',
@@ -1788,22 +1919,18 @@ export function DownloaderApp() {
             if (!imageResponse.ok) continue
 
             const blob = await imageResponse.blob()
-            const blobUrl = URL.createObjectURL(blob)
-
-            const link = document.createElement('a')
-            link.href = blobUrl
-            link.download = nameFile(
+            const filename = nameFile(
               // The route already worked out what each entry is; naming a clip
               // `.jpg` here was how a carousel's video reached the disk as a
               // file nothing would play.
               imageData.ext || 'jpg',
               { index: i + 1, total: totalImages },
             )
-            document.body.appendChild(link)
-            link.click()
-            document.body.removeChild(link)
-
-            URL.revokeObjectURL(blobUrl)
+            // Only a one-item selection is offered to the share sheet. A run of
+            // saves has no single "the file" to send, and quietly offering the
+            // last one would send the wrong picture confidently.
+            const keep = totalImages === 1 ? deliver : saveBlob
+            keep(blob, filename)
 
             await new Promise((resolve) => setTimeout(resolve, 500))
           } catch (error) {
@@ -2435,6 +2562,21 @@ export function DownloaderApp() {
                   {t('tryAgain')}
                 </button>
               )}
+            {canSendToApp && (
+              // The other half of a download on a phone. The file is on the
+              // device now, but what somebody actually came to do is put it in
+              // a chat — and finding it again in a Downloads folder is the part
+              // that makes people give up. Rendered only where the OS really
+              // takes this file (see lib/shareFile), so it never appears as a
+              // button that does nothing on a desktop.
+              <button
+                type='button'
+                onClick={() => void handleSendToApp()}
+                className='btn-press mx-auto mt-2 block rounded-lg border border-white/25 px-3 py-1 text-xs font-semibold transition-colors hover:bg-white/10'
+              >
+                {lastSaved.failed ? t('sendFailed') : t('sendToApp')}
+              </button>
+            )}
           </div>
         )}
 

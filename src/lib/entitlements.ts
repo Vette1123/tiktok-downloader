@@ -93,6 +93,19 @@ export function useSaveBoth(): boolean {
   return useTier() === 'pro'
 }
 
+/**
+ * Whether a saved MP3 gets its title, artist and cover written into it.
+ *
+ * Nothing here reaches anything a free visitor cannot download — the bytes are
+ * identical, and the tag is built entirely from what the card is already
+ * showing. What supporting removes is the evening spent typing that back in
+ * afterwards. Like `useSaveBoth`, there is no preference behind it: an
+ * untagged MP3 is not a thing anyone chooses.
+ */
+export function useAudioTags(): boolean {
+  return useTier() === 'pro'
+}
+
 export function useProToken(): string | null {
   // Subscribing to the account store is what re-renders this when a refresh
   // lands; the token itself is read imperatively because it is not part of the
