@@ -79,6 +79,12 @@ import {
 } from '@/lib/platformFormat'
 import { detectPlatform, type SupportedPlatform } from '@/lib/validator'
 import { resolveNarration } from '@/lib/resolveNarration'
+import {
+  MISSES_SHOWN,
+  missesHeading,
+  missesRetryLabel,
+  shortLink,
+} from '@/lib/missedLinks'
 import { resolve } from '@/lib/resolve'
 import {
   describeProgress,
@@ -488,17 +494,6 @@ function pasteBarAccent(hasError: boolean, dragging: boolean): string {
   return 'focus-within:[--surface-line:rgba(34,211,238,0.6)]'
 }
 
-/**
- * The line under the YouTube embed.
- *
- * Three outcomes, not two. The middle one is new and is the whole reason this
- * is a function rather than an inline ternary: YouTube now bot-blocks video
- * extraction from datacenter addresses for most videos, but its iPhone client
- * still hands over the audio track — so the common result is an embed you
- * cannot save as video and CAN save as an MP3. Telling that visitor "direct
- * download isn't available" would be pointing away from the working button
- * sitting right underneath.
- */
 /** Whatever a rejected promise turned out to be carrying. */
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : ''
@@ -523,6 +518,17 @@ function explain(raw: string | undefined, url?: string): string {
   return `${fe.title} — ${fe.hint}`
 }
 
+/**
+ * The line under the YouTube embed.
+ *
+ * Three outcomes, not two. The middle one is new and is the whole reason this
+ * is a function rather than an inline ternary: YouTube now bot-blocks video
+ * extraction from datacenter addresses for most videos, but its iPhone client
+ * still hands over the audio track — so the common result is an embed you
+ * cannot save as video and CAN save as an MP3. Telling that visitor "direct
+ * download isn't available" would be pointing away from the working button
+ * sitting right underneath.
+ */
 function embedCaption(hasVideo: boolean, hasAudio: boolean): string {
   if (hasVideo) return 'Preview via YouTube — use the buttons below to download.'
   if (hasAudio) {
@@ -817,6 +823,15 @@ export function DownloaderApp() {
     getSavedServerSnapshot,
   )
   /**
+   * The links from the last multi-link paste that did not resolve.
+   *
+   * They used to be dropped on the floor: the run reported "Saved 14 of 20"
+   * and nothing else, which is a number somebody then has to turn back into
+   * links by comparing it against a Recent list. Usually the answer is "the
+   * two private ones", and that is only knowable if the links are shown.
+   */
+  const [batchMisses, setBatchMisses] = useState<string[]>([])
+  /**
    * Drop the current result — the reducer's half and the held file with it.
    *
    * One function rather than the three bare dispatches this replaces: the held
@@ -827,6 +842,7 @@ export function DownloaderApp() {
   const resetResult = useCallback(() => {
     dispatch({ type: 'RESET_DOWNLOAD_STATE' })
     forgetSaved()
+    setBatchMisses([])
   }, [])
   const inputRef = useRef<HTMLInputElement>(null)
   const pasteBarRef = useRef<HTMLDivElement>(null)
@@ -1165,6 +1181,11 @@ export function DownloaderApp() {
 
     let saved = 0
     let last: { data: unknown; target: string } | null = null
+    // Which ones did not make it. Collected rather than counted, because "6
+    // failed" leaves somebody to work out *which* six by comparing a summary
+    // against a Recent list — and the answer is usually "the two private ones",
+    // which is only visible if the links themselves are shown.
+    const missed: string[] = []
 
     for (let i = 0; i < urls.length; i++) {
       setBatch({ done: i, total: urls.length, saved })
@@ -1174,13 +1195,17 @@ export function DownloaderApp() {
           saved++
           await rememberInHistory(urls[i], data.metadata)
           last = { data, target: urls[i] }
+        } else {
+          missed.push(urls[i])
         }
       } catch {
-        // skip this link — keep going through the rest of the batch.
+        // Keep going through the rest of the batch — but not silently.
+        missed.push(urls[i])
       }
     }
 
     setBatch(null)
+    setBatchMisses(missed)
     dispatch({ type: 'SET_LOADING', payload: false })
 
     if (last) {
@@ -2056,6 +2081,19 @@ export function DownloaderApp() {
     await handleAudioDownload()
   }
 
+  /**
+   * Re-run the links a multi-link paste could not resolve.
+   *
+   * A single leftover goes through the ordinary single-link path rather than
+   * the queue: it produces a result card and a real error message, where the
+   * batch summary would only be able to say "Saved 0 of 1".
+   */
+  const retryMisses = () => {
+    const links = batchMisses
+    if (links.length === 1) void handleProcess(links[0])
+    else void processBatch(links)
+  }
+
   // What a retry would re-run. Empty when there is nothing to retry — which,
   // until this was derived rather than read straight off `originalUrl`, was
   // every failed resolve. See lib/appReducer.
@@ -2653,6 +2691,39 @@ export function DownloaderApp() {
               </button>
             )}
           </div>
+        )}
+
+        {batchMisses.length > 0 && !isResolvingOrDownloading(state) && (
+          // The other half of "Saved 14 of 20". A count is not an answer: the
+          // six that failed are usually a couple of private posts and a typo,
+          // and which is which is only visible if the links are shown.
+          <Surface
+            elevation='raised'
+            className='animate-section-in space-y-3 p-4'
+          >
+            <p className='text-sm font-medium text-white/75'>
+              {missesHeading(batchMisses.length)}
+            </p>
+            <ul className='space-y-1 text-xs text-white/45'>
+              {batchMisses.slice(0, MISSES_SHOWN).map((url) => (
+                <li key={url} className='truncate'>
+                  {shortLink(url)}
+                </li>
+              ))}
+              {batchMisses.length > MISSES_SHOWN && (
+                <li className='text-white/35'>
+                  and {batchMisses.length - MISSES_SHOWN} more
+                </li>
+              )}
+            </ul>
+            <button
+              type='button'
+              onClick={retryMisses}
+              className='btn-press rounded-lg border border-white/25 px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-white/10'
+            >
+              {missesRetryLabel(batchMisses.length)}
+            </button>
+          </Surface>
         )}
 
         {/* Attached to the success line, and only ever to that one. This is the
