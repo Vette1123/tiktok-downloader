@@ -19,7 +19,10 @@ import {
 import { buildDownloadFilename } from '@/lib/filename'
 import { saveBlob } from '@/lib/blobSaver'
 import { resolve, type ResolveResult } from '@/lib/resolve'
-import { usePendingCollectionImport } from '@/lib/batchHandoff'
+import {
+  usePendingBatchLinks,
+  usePendingCollectionImport,
+} from '@/lib/batchHandoff'
 import {
   useFilenameTemplate,
   useProToken,
@@ -235,6 +238,9 @@ export function BatchPanel() {
   const [playlistUrl, setPlaylistUrl] = useState('')
   // A collection link handed over from the paste bar; see lib/batchHandoff.
   const pendingImport = usePendingCollectionImport()
+  // A list of links handed over from the Recent panel; see lib/batchHandoff.
+  const pendingLinks = usePendingBatchLinks()
+  const [linksSeededFrom, setLinksSeededFrom] = useState<string | null>(null)
   // The last hand-off applied, so a re-render cannot overwrite typing.
   const [seededFrom, setSeededFrom] = useState<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -514,13 +520,24 @@ export function BatchPanel() {
     setPlaylistUrl(pendingImport)
   }
 
+  // The same pattern for a list of links, which lands in the queue itself
+  // rather than the importer. Appended, never replacing: somebody who has
+  // already pasted a few links and then sends their unsaved Recent rows over
+  // meant both.
+  if (pendingLinks !== null && pendingLinks !== linksSeededFrom) {
+    setLinksSeededFrom(pendingLinks)
+    setRawInput((current) =>
+      current.trim() ? [current.trimEnd(), pendingLinks].join('\n') : pendingLinks,
+    )
+  }
+
   // Scrolled into view because the panel is below the fold on most screens:
   // filling a field nobody can see looks exactly like nothing happening. A DOM
   // call, not state, so it belongs in an effect.
   useEffect(() => {
-    if (!seededFrom) return
+    if (!seededFrom && !linksSeededFrom) return
     panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  }, [seededFrom])
+  }, [seededFrom, linksSeededFrom])
 
   if (tier !== 'pro') return null
 

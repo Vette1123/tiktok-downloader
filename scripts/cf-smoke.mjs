@@ -762,6 +762,21 @@ function describeBytes(bytes) {
 }
 
 /**
+ * The `error` an API failure carries, for a status line that would otherwise
+ * say only the number. Falls back to the raw head of the body, because a
+ * response that is not our JSON at all (a Cloudflare page, an HTML error) is
+ * itself the finding.
+ */
+function errorFrom(body) {
+  const text = new TextDecoder().decode(body)
+  try {
+    return JSON.parse(text).error ?? text.slice(0, 120)
+  } catch {
+    return text.slice(0, 120)
+  }
+}
+
+/**
  * Pull the head of a resolved stream and say whether it is really a video.
  * Returns null when it is, or the failure line when it is not — the shape every
  * `check` in this file returns.
@@ -817,7 +832,15 @@ function platformProbeCheck(probe) {
       timeoutMs: 90_000,
     },
     check: async (response, body) => {
-      if (response.status !== 200) return `expected 200, got ${response.status}`
+      // A 422 here carries the extractor's own sentence, and that sentence is
+      // the difference between "the platform is rate-limiting us, try later"
+      // and "the post is gone" — the two things this list's own rules say to
+      // tell apart before touching any code. Printing the status alone threw
+      // that away and sent the reader to the logs for something already in
+      // the body.
+      if (response.status !== 200) {
+        return `expected 200, got ${response.status}: ${errorFrom(body)}`
+      }
       const payload = JSON.parse(new TextDecoder().decode(body))
       if (!payload.success) return `success=false: ${payload.error ?? 'no error given'}`
       const meta = payload.metadata ?? {}

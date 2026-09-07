@@ -55,6 +55,51 @@ export function requestCollectionImport(url: string): void {
   emit()
 }
 
+let pendingLinks: string | null = null
+const linkListeners = new Set<() => void>()
+
+function subscribeLinks(listener: () => void): () => void {
+  linkListeners.add(listener)
+  return () => {
+    linkListeners.delete(listener)
+  }
+}
+
+function getLinksSnapshot(): string | null {
+  return pendingLinks
+}
+
+function getLinksServerSnapshot(): null {
+  return null
+}
+
+/**
+ * Ask the batch panel to work through this list of links.
+ *
+ * A second channel rather than a second use of the first, because the two land
+ * in different fields: a collection goes to the importer, which expands it, and
+ * a list goes straight into the queue's own well. Sharing one slot would mean
+ * every reader guessing which kind it had.
+ *
+ * The joined text is the value, not the array: it is what the textarea holds,
+ * and it makes the "same request twice" guard a string comparison rather than
+ * a deep one.
+ */
+export function requestBatchLinks(urls: readonly string[]): void {
+  const text = urls.join('\n')
+  if (!text || pendingLinks === text) return
+  pendingLinks = text
+  for (const listener of linkListeners) listener()
+}
+
+export function usePendingBatchLinks(): string | null {
+  return useSyncExternalStore(
+    subscribeLinks,
+    getLinksSnapshot,
+    getLinksServerSnapshot,
+  )
+}
+
 export function usePendingCollectionImport(): string | null {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
 }

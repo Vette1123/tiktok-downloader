@@ -103,7 +103,11 @@ import { clipboardDecision } from '@/lib/clipboardWatch'
 import { savedAgo } from '@/lib/savedAgo'
 import { carriesText, droppedLink, isEditableTarget } from '@/lib/linkDrop'
 import { linkAdvice, type LinkAdvice } from '@/lib/linkAdvice'
-import { requestCollectionImport } from '@/lib/batchHandoff'
+import {
+  requestBatchLinks,
+  requestCollectionImport,
+} from '@/lib/batchHandoff'
+import { MAX_BATCH_URLS } from '@/lib/batchQueue'
 
 // Pull the first http(s) URL out of arbitrary shared text. Android's share sheet
 // often hands a link inside `text` wrapped in a caption ("check this out <url>"),
@@ -353,6 +357,41 @@ function downloadManagerUrl(
   if (isAttachment) return directUrl
   if (outcome === 'too-big' && proxiedUrl) return proxiedUrl
   return null
+}
+
+/**
+ * The links in Recent that were resolved but never saved.
+ *
+ * Only meaningful because the list now records the difference. For a supporter
+ * this is a job the queue can take in one tap; for everyone else it is the
+ * clearest possible statement of what the queue is for, at the moment they can
+ * see the pile themselves.
+ */
+function UnsavedRow({ count, urls }: { count: number; urls: string[] }) {
+  const tier = useTier()
+  const label = `${count} not saved yet`
+
+  return (
+    <div className='mb-2 flex items-center justify-between gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5'>
+      <span className='text-[11px] text-white/55'>{label}</span>
+      {tier === 'pro' ? (
+        <button
+          type='button'
+          onClick={() => requestBatchLinks(urls)}
+          className='card-hover rounded-md border border-cyan-400/25 bg-cyan-400/10 px-2 py-1 text-[11px] font-medium text-cyan-200'
+        >
+          Send them to the queue
+        </button>
+      ) : (
+        <Link
+          href='/pro'
+          className='rounded-md px-1.5 py-0.5 text-[11px] text-cyan-300/80 underline-offset-4 transition-colors hover:text-cyan-200 hover:underline'
+        >
+          Supporters queue these →
+        </Link>
+      )}
+    </div>
+  )
 }
 
 /**
@@ -1815,6 +1854,22 @@ export function DownloaderApp() {
    * would keep saying "this minute" for an hour. The list is capped at thirty,
    * so the lookup is free.
    */
+  /**
+   * Recent rows that were resolved but never downloaded, newest first.
+   *
+   * Capped at the queue's own limit, because offering to send twenty-five links
+   * to a queue that takes twenty would fail at the far end for a reason nobody
+   * could see from here.
+   */
+  const unsavedLinks = useMemo(
+    () =>
+      history
+        .filter((entry) => !entry.savedAt)
+        .slice(0, MAX_BATCH_URLS)
+        .map((entry) => entry.url),
+    [history],
+  )
+
   const savedNote = (() => {
     if (!state.originalUrl) return null
     const savedAt = history.find((e) => e.url === state.originalUrl)?.savedAt
@@ -2205,6 +2260,14 @@ export function DownloaderApp() {
               aria-label={t('filterRecent')}
               className='mb-2 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-white caret-cyan-300 outline-none placeholder:text-white/35 focus:border-cyan-400/40'
             />
+          )}
+          {/* The Recent list now knows which rows are downloaded and which were
+              only looked at, and the gap between those two numbers is a real
+              piece of work sitting there: links pasted while browsing that
+              nobody has saved yet. The queue is what does that work, so the
+              count is the offer. */}
+          {unsavedLinks.length > 1 && (
+            <UnsavedRow count={unsavedLinks.length} urls={unsavedLinks} />
           )}
           {historyNote && (
             <p className='mb-2 text-right text-[11px] text-white/45'>
