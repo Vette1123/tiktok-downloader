@@ -37,7 +37,11 @@ export function ShareButton({
       onClick={() => void handleShare()}
       className='rounded-xl border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-white/70 transition-colors hover:text-white'
     >
-      {failed ? 'Could not share' : 'Share'}
+      {/* "Share link", not "Share". Once a save offers "Send to an app" — which
+          hands over the actual file — a bare "Share" on the card is one of two
+          buttons with the same verb and different objects, and the one that
+          sends a URL when somebody wanted the video is the worse surprise. */}
+      {failed ? 'Could not share' : 'Share link'}
     </button>
   )
 }

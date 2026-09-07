@@ -57,6 +57,12 @@ import { parseYouTubeId } from '@/lib/validator'
 import { SubtitlePicker } from '@/components/SubtitlePicker'
 import { ThumbnailButton } from '@/components/ThumbnailButton'
 import { ShareButton } from '@/components/ShareButton'
+import { AudioPreview } from '@/components/AudioPreview'
+import {
+  audioPreviewLabel,
+  shouldOfferAudioPreview,
+} from '@/lib/audioPreview'
+import { namedAuthor } from '@/lib/byline'
 import Link from 'next/link'
 import { CopyLinkButton } from '@/components/CopyLinkButton'
 import { friendlyError } from '@/lib/errorMessages'
@@ -2094,6 +2100,24 @@ export function DownloaderApp() {
     else void processBatch(links)
   }
 
+  // Whether this result is worth offering a listen for, and what to call the
+  // track. Both derived here so the JSX below stays a condition and a render.
+  const offerAudioPreview =
+    !!state.audioUrl &&
+    shouldOfferAudioPreview({
+      hasAudio: !!state.audioUrl,
+      hasVideo: !!state.downloadUrl,
+      hasEmbed: !!state.videoMetadata?.embedUrl,
+      isCarousel: !!state.videoMetadata?.isPhotoCarousel,
+      imageCount: state.videoMetadata?.images?.length ?? 0,
+    })
+  const audioLabel = audioPreviewLabel(
+    state.videoMetadata,
+    state.videoMetadata?.title,
+  )
+  // Absent rather than 'Unknown' — see lib/byline.
+  const resultAuthor = namedAuthor(state.videoMetadata?.author)
+
   // What a retry would re-run. Empty when there is nothing to retry — which,
   // until this was derived rather than read straight off `originalUrl`, was
   // every failed resolve. See lib/appReducer.
@@ -2810,9 +2834,11 @@ export function DownloaderApp() {
                   <h3 className='text-white font-medium text-sm md:text-base line-clamp-2'>
                     {state.videoMetadata.title}
                   </h3>
-                  <p className='text-white/70 text-xs md:text-sm mt-1'>
-                    by {state.videoMetadata.author}
-                  </p>
+                  {resultAuthor && (
+                    <p className='text-white/70 text-xs md:text-sm mt-1'>
+                      by {resultAuthor}
+                    </p>
+                  )}
                   {(state.videoMetadata.duration > 0 ||
                     !!state.videoMetadata.sizeBytes) && (
                     <p className='text-white/50 text-xs mt-1 tabular-nums'>
@@ -2987,35 +3013,19 @@ export function DownloaderApp() {
                 </div>
               )}
 
-              {/* Photo Carousel Audio Preview */}
-              {state.videoMetadata?.isPhotoCarousel && state.audioUrl && (
-                <div className='animate-fade-in-up space-y-3 bg-gradient-to-br from-cyan-500/10 to-sky-500/10 rounded-xl p-4 border border-white/[0.1]'>
-                  <div className='flex items-center gap-2 text-white'>
-                    <MusicIcon className='w-5 h-5 text-cyan-300' />
-                    <div className='flex-1 min-w-0'>
-                      <p className='text-sm font-semibold truncate'>
-                        {state.videoMetadata.musicTitle ||
-                          'Slideshow soundtrack'}
-                      </p>
-                      {state.videoMetadata.musicAuthor && (
-                        <p className='text-xs text-white/60 truncate'>
-                          by {state.videoMetadata.musicAuthor}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  {/* preload='none', not 'metadata': every carousel result
-                      would otherwise pull the head of the track through
-                      /api/audio for a visitor who never pressed play. */}
-                  <audio
-                    src={state.audioUrl}
-                    controls
-                    preload='none'
-                    className='w-full'
-                  >
-                    Your browser does not support the audio element.
-                  </audio>
-                </div>
+              {/* Hear it before saving it. This used to be carousel-only, which
+                  left every audio-only result — now the common one, since a
+                  YouTube link resolves to audio and picking MP3 lands in the
+                  same place — as a title and a Download button with no way to
+                  check it is the right track. See lib/audioPreview for which
+                  results get it and why the ones with a video or an embed do
+                  not. */}
+              {offerAudioPreview && (
+                <AudioPreview
+                  src={state.audioUrl}
+                  title={audioLabel.title}
+                  subtitle={audioLabel.subtitle}
+                />
               )}
 
               {/* Image Gallery */}
@@ -3415,14 +3425,22 @@ export function DownloaderApp() {
               )}
 
               {/* iOS: video downloads land in Files, not the camera roll, so
-                  point users at the one extra tap that saves to Photos. Only for
-                  a real video stream (MP3/Files-only downloads don't need it). */}
+                  point users at the shortest route to Photos. Only for a real
+                  video stream (MP3/Files-only downloads don't need it).
+
+                  Two routes now, and the hint has to name the one that is
+                  actually on screen. Before a save there is only the long way
+                  round — Files, open, Share, Save Video. Once a file is in hand
+                  the share sheet is one tap away in the banner above, and
+                  telling somebody to go hunting in Files while that button sits
+                  there is teaching the worse path. */}
               {isIOS &&
                 !!state.downloadUrl &&
                 !state.videoMetadata?.isPhotoCarousel && (
                   <p className='text-center text-[11px] leading-relaxed text-white/50'>
-                    On iPhone it saves to Files. To add it to Photos, open the
-                    file, tap Share, then Save Video.
+                    {canSendToApp
+                      ? 'Saved to Files. “Send to an app” above drops it straight into Photos or a chat.'
+                      : 'On iPhone it saves to Files. To add it to Photos, open the file, tap Share, then Save Video.'}
                   </p>
                 )}
 
