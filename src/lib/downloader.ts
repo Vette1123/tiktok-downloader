@@ -760,6 +760,30 @@ export function instagramLinkIsVideo(url: string): boolean {
 }
 
 /**
+ * Whether a gallery offered for a video link is really just the poster.
+ *
+ * The last-resort branch of the Instagram chain hands back a gallery when no
+ * stream could be had, on the reasoning that something beats nothing. For a
+ * link whose shape names a video that reasoning fails at exactly one size: a
+ * `/reel/` cannot be a carousel, so a single image is the cover and handing it
+ * over is the JPEG-for-a-reel complaint all over again.
+ *
+ * Read from the production log on 2026-09-07 —
+ * `embed:nothing crawler:nothing media-info:nothing cobalt:stills(1)` — which
+ * is the bug arriving through a door the `expect: 'video'` probe was not
+ * standing at, because a gallery never claims to be a stream.
+ *
+ * More than one image is left alone: that is a real carousel that something
+ * mislabelled, and dropping it would lose content nobody could get otherwise.
+ */
+export function stillsAreJustTheCover(
+  expectsVideo: boolean,
+  imageCount: number,
+): boolean {
+  return expectsVideo && imageCount === 1
+}
+
+/**
  * The `data-media-type` the embed page stamps on its container: `GraphImage`,
  * `GraphVideo` or `GraphSidecar`. It is present in the bare shell — the render
  * Instagram serves with no `gql_data` blob attached — which is exactly when
@@ -2408,13 +2432,36 @@ export class Downloader {
     }
     // A gallery for a video link is the last thing tried, never the first: it
     // is the poster, and handing it over as though it were the clip is the
-    // failure this whole chain was rebuilt to stop. Handing it over at all is
-    // still a degradation, and a loud one — a visitor asked for a reel and is
-    // getting a picture — so it says which four attempts led here rather than
-    // returning quietly and leaving the next person to guess.
-    if (stillsOnly) {
+    // failure this whole chain was rebuilt to stop.
+    //
+    // One still is not a gallery, it is the cover. Read from production on
+    // 2026-09-07, this is how the JPEG-for-a-reel bug came back wearing
+    // different clothes: with the crawler view rate-limited (`crawler:nothing`
+    // after a 429) and the embed carrying no video_url, Cobalt answered with
+    // `images: [cover]` — which walks straight past the `expect: 'video'` probe
+    // that guards a *tunnel*, because it never claims to be a stream at all.
+    //
+    // A `/reel/` link cannot be a carousel, so for a link whose shape names a
+    // video a single image is always the poster and never the answer. Falling
+    // through to the honest error below is better: "we are being rate-limited,
+    // try again" is something a visitor can act on, and a picture named after
+    // the reel they asked for is the complaint that started all of this.
+    if (stillsOnly && !stillsAreJustTheCover(expectsVideo, stillsOnly.images?.length ?? 0)) {
       console.warn(`Instagram gave a reel its cover image: ${outcomes.join(' ')}`)
       return stillsOnly
+    }
+    if (stillsOnly) {
+      console.warn(`Instagram refused a cover-only reel: ${outcomes.join(' ')}`)
+    }
+
+    // Rate-limited rather than unavailable, and the two need different words:
+    // this post is fine and will work in a few minutes, which is worth saying
+    // instead of listing reasons ("private, deleted, region-locked") that are
+    // all wrong and all alarming.
+    if (expectsVideo && instagramCrawlerCoolingDown()) {
+      throw new Error(
+        'Instagram is rate-limiting this downloader right now, so this reel could not be read. Nothing is wrong with the post — give it a few minutes and try again.',
+      )
     }
 
     // A credentialed request whose session is locked reached here as if it were

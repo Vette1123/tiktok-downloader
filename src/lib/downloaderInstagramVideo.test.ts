@@ -9,6 +9,7 @@ import {
   parseInstagramCrawlerMedia,
   resetCobaltCooldown,
   resetInstagramCrawlerCooldown,
+  stillsAreJustTheCover,
 } from './downloader'
 
 /**
@@ -586,5 +587,46 @@ describe('how big the stream turned out to be', () => {
     stubRanged({ 'content-range': 'bytes 0-1024/*' })
     const probe = await priv(new Downloader()).probeStream('https://cdn.example/x')
     expect(probe.sizeBytes).toBeUndefined()
+  })
+})
+
+/**
+ * The cover image, refused.
+ *
+ * Read from the production log on 2026-09-07:
+ *
+ *     Instagram gave a reel its cover image:
+ *     embed:nothing crawler:nothing media-info:nothing cobalt:stills(1)
+ *
+ * With the crawler view rate-limited (a 429, then a ten-minute hold) and this
+ * reel's embed carrying no `video_url`, Cobalt answered with `images: [cover]`.
+ * That walks straight past the `expect: 'video'` probe asserted above, because
+ * a gallery never claims to be a stream — the same defect arriving through a
+ * door the guard was not standing at.
+ */
+describe('a gallery offered for a video link', () => {
+  it('is the cover when there is exactly one image', () => {
+    expect(stillsAreJustTheCover(true, 1)).toBe(true)
+  })
+
+  /**
+   * More than one is a real carousel that something mislabelled. Dropping it
+   * would lose content nobody could get any other way, and a `/reel/` link that
+   * somehow yielded four images is a mystery worth handing over rather than
+   * swallowing.
+   */
+  it('is left alone when there are several', () => {
+    expect(stillsAreJustTheCover(true, 4)).toBe(false)
+  })
+
+  /** A `/p/` link is a carousel by default; one image there is the post. */
+  it('is the post itself when the link never promised a video', () => {
+    expect(stillsAreJustTheCover(false, 1)).toBe(false)
+    expect(stillsAreJustTheCover(false, 10)).toBe(false)
+  })
+
+  /** Nothing at all is handled by the caller, not by this rule. */
+  it('says nothing about an empty gallery', () => {
+    expect(stillsAreJustTheCover(true, 0)).toBe(false)
   })
 })
