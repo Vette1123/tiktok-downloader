@@ -5,6 +5,7 @@ import {
   initialState,
   isResolvingOrDownloading,
   isSuccessMessage,
+  retryTarget,
   type ImageData,
 } from './appReducer'
 
@@ -174,5 +175,33 @@ describe('a resolved carousel', () => {
   it('leaves a plain video result alone', () => {
     const state = resolved([])
     expect(state.showImageGallery).toBe(false)
+  })
+})
+
+describe('what a retry re-runs', () => {
+  /**
+   * The bug this exists for. `RESET_DOWNLOAD_STATE` clears `originalUrl` at the
+   * start of every attempt, so a resolve that failed leaves it empty — and the
+   * banner's retry button, whose entire reason for existing is a failed
+   * resolve, was gated on it and therefore never rendered.
+   */
+  it('falls back to the attempted link when the resolve failed', () => {
+    expect(retryTarget({ originalUrl: '', url: 'https://x.com/i/status/1' }))
+      .toBe('https://x.com/i/status/1')
+  })
+
+  /**
+   * After a *download* failure there is a result on screen, and re-resolving
+   * its link is what gets fresh URLs for an expired tunnel — so the result's
+   * own link wins over whatever is left in the field.
+   */
+  it('prefers the resolved link when there is one', () => {
+    expect(retryTarget({ originalUrl: 'https://a.test/p/1', url: 'typing…' }))
+      .toBe('https://a.test/p/1')
+  })
+
+  it('offers nothing to retry when there is nothing', () => {
+    expect(retryTarget({ originalUrl: '', url: '' })).toBe('')
+    expect(retryTarget({ originalUrl: '', url: '   ' })).toBe('')
   })
 })

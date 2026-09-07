@@ -16,16 +16,47 @@ const REGION = /region|geo[- ]?block|not available in your|country/i
 const GONE = /deleted|removed|unavailable|not found|no longer|404/i
 const UNSUPPORTED = /unsupported|invalid url|couldn'?t? (parse|recogni)|not a valid/i
 const RATE = /rate[- ]?limit|too many|429|blocking requests|blocked/i
-const NETWORK = /network|timeout|timed out|econn|fetch failed|socket/i
+// "Failed to fetch" (Chrome/Firefox) and "Load failed" (Safari) are what a
+// dropped connection actually reads as at the call site, and neither contains
+// the word "network" — so this used to fall through to the generic branch and
+// show somebody the browser's own internal phrasing.
+const NETWORK =
+  /network|timeout|timed out|econn|fetch failed|failed to fetch|load failed|socket/i
 const STORY = /story|stories|highlight/i
+
+export interface ErrorContext {
+  /**
+   * False only when the browser is certain there is no connection.
+   *
+   * One-directional on purpose: `navigator.onLine === false` means definitely
+   * offline, while `true` only means an interface is up — a captive portal or a
+   * dead uplink still reports it. So this answers "offline" and never "online".
+   */
+  online?: boolean
+}
 
 /**
  * Map a raw error to a friendly headline + hint. Falls back to the raw text
  * (trimmed) as the hint so nothing is ever hidden from the user.
  */
-export function friendlyError(raw: string | undefined, url?: string): FriendlyError {
+export function friendlyError(
+  raw: string | undefined,
+  url?: string,
+  context: ErrorContext = {},
+): FriendlyError {
   const text = (raw || '').trim()
   const looksInstagramStory = !!url && /instagram\.com\/(stories|s)\//i.test(url)
+
+  // First, because it outranks everything the text could say: with no
+  // connection the request never reached us, so nothing about the post is
+  // known — and telling somebody their link might be private when their wifi
+  // is off sends them to check the wrong thing.
+  if (context.online === false) {
+    return {
+      title: 'You are offline',
+      hint: 'This link needs a connection to resolve. Reconnect and try again — nothing about the post is wrong.',
+    }
+  }
 
   if (looksInstagramStory || (STORY.test(text) && PRIVATE.test(text))) {
     return {

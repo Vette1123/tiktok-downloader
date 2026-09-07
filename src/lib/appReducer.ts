@@ -220,6 +220,27 @@ export function isResolvingOrDownloading(
   )
 }
 
+/**
+ * The link a retry should re-run, or '' when there is nothing to retry.
+ *
+ * `originalUrl` is the obvious answer and is also the wrong one on its own: it
+ * names the link a *result* came from, and a resolve that failed produced no
+ * result — `RESET_DOWNLOAD_STATE` clears it at the start of every attempt. So
+ * the banner's retry button, which exists precisely for a failed resolve, was
+ * reading an empty string on the one path it was written for and never
+ * rendered at all.
+ *
+ * The field still holds the attempted link at that moment (it is only cleared
+ * on success), so it is the fallback. Order matters: after a *download* failure
+ * there is a result on screen and `originalUrl` is the link worth re-resolving,
+ * which is also how an expired tunnel gets fresh URLs.
+ */
+export function retryTarget(
+  state: Pick<AppState, 'originalUrl' | 'url'>,
+): string {
+  return state.originalUrl || state.url.trim()
+}
+
 export function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case 'SET_URL':

@@ -15,6 +15,7 @@ import {
   appReducer,
   initialState,
   isResolvingOrDownloading,
+  retryTarget,
   isSavedMessage,
   isSuccessMessage,
   type VideoMetadata,
@@ -497,6 +498,30 @@ function pasteBarAccent(hasError: boolean, dragging: boolean): string {
  * download isn't available" would be pointing away from the working button
  * sitting right underneath.
  */
+/** Whatever a rejected promise turned out to be carrying. */
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : ''
+}
+
+/**
+ * Whether the browser is certain there is no connection.
+ *
+ * Only ever asked in the negative: `navigator.onLine === true` means an
+ * interface is up, which a captive portal and a dead uplink both satisfy.
+ */
+function browserIsOffline(): boolean {
+  return typeof navigator !== 'undefined' && navigator.onLine === false
+}
+
+/**
+ * One banner line from a raw failure — the four copies of this that had drifted
+ * apart across two handlers, plus the connection check none of them made.
+ */
+function explain(raw: string | undefined, url?: string): string {
+  const fe = friendlyError(raw, url, { online: !browserIsOffline() })
+  return `${fe.title} — ${fe.hint}`
+}
+
 function embedCaption(hasVideo: boolean, hasAudio: boolean): string {
   if (hasVideo) return 'Preview via YouTube — use the buttons below to download.'
   if (hasAudio) {
@@ -985,12 +1010,10 @@ export function DownloaderApp() {
           setPlatformQualityMap(getStoredQualityMap())
         }
       } else {
-        const fe = friendlyError(data.error, target)
-        dispatch({ type: 'SET_MESSAGE', payload: `${fe.title} — ${fe.hint}` })
+        dispatch({ type: 'SET_MESSAGE', payload: explain(data.error, target) })
       }
     } catch (err) {
-      const fe = friendlyError(err instanceof Error ? err.message : '', target)
-      dispatch({ type: 'SET_MESSAGE', payload: `${fe.title} — ${fe.hint}` })
+      dispatch({ type: 'SET_MESSAGE', payload: explain(errorText(err), target) })
     } finally {
       setRepicking(null)
     }
@@ -1038,6 +1061,17 @@ export function DownloaderApp() {
     }
     setPasteAdvice(null)
 
+    // Nothing worth spending a request on: the browser already knows this one
+    // cannot leave the device. Waiting out a timeout to say so tells the
+    // visitor less, later — and the guess it eventually produced was usually
+    // about the post rather than about the wifi.
+    if (browserIsOffline()) {
+      resetResult()
+      dispatch({ type: 'SET_URL', payload: target })
+      dispatch({ type: 'SET_MESSAGE', payload: explain('', target) })
+      return
+    }
+
     dispatch({ type: 'SET_LOADING', payload: true })
     resetResult()
 
@@ -1074,19 +1108,11 @@ export function DownloaderApp() {
           }
         }, 500)
       } else {
-        const fe = friendlyError(data.error, target)
-        dispatch({
-          type: 'SET_MESSAGE',
-          payload: `${fe.title} — ${fe.hint}`,
-        })
+        dispatch({ type: 'SET_MESSAGE', payload: explain(data.error, target) })
       }
     } catch (err) {
       console.error('Processing error:', err)
-      const fe = friendlyError(err instanceof Error ? err.message : '', target)
-      dispatch({
-        type: 'SET_MESSAGE',
-        payload: `${fe.title} — ${fe.hint}`,
-      })
+      dispatch({ type: 'SET_MESSAGE', payload: explain(errorText(err), target) })
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false })
     }
@@ -1992,6 +2018,11 @@ export function DownloaderApp() {
     await handleAudioDownload()
   }
 
+  // What a retry would re-run. Empty when there is nothing to retry — which,
+  // until this was derived rather than read straight off `originalUrl`, was
+  // every failed resolve. See lib/appReducer.
+  const retryLink = retryTarget(state)
+
   /**
    * "Saved 2 hours ago", when this exact link has been downloaded before.
    *
@@ -2536,8 +2567,14 @@ export function DownloaderApp() {
           // stall, no 0-height ghost left in the space-y flow.
           <div
             key={state.message}
-            role='status'
-            aria-live='polite'
+            // A failure interrupts; a confirmation waits its turn. Announcing
+            // "this post is private" politely means it queues behind whatever
+            // the page was already reading out, and somebody using a screen
+            // reader hears the reason for the silence long after the silence.
+            // Safe to switch per message because key={message} remounts the
+            // element, so no live region ever changes role in place.
+            role={isSuccessMessage(state.message) ? 'status' : 'alert'}
+            aria-live={isSuccessMessage(state.message) ? 'polite' : 'assertive'}
             className={`animate-section-in p-3 rounded-xl text-center text-sm md:text-base ${
               isSuccessMessage(state.message)
                 ? 'bg-green-500/20 text-green-300 border border-green-500/30'
@@ -2547,7 +2584,7 @@ export function DownloaderApp() {
             {displayMessage(t, state.message)}
             {!isSuccessMessage(state.message) &&
               !isResolvingOrDownloading(state) &&
-              state.originalUrl && (
+              retryLink && (
                 // A failed resolve usually means "the source hiccuped", not
                 // "give up" — offer the retry where the failure is, instead
                 // of making someone scroll up and re-click Process. Gated on
@@ -2556,7 +2593,7 @@ export function DownloaderApp() {
                 // transfer offers to restart itself.
                 <button
                   type='button'
-                  onClick={() => void handleProcess(state.originalUrl)}
+                  onClick={() => void handleProcess(retryLink)}
                   className='btn-press mx-auto mt-2 block rounded-lg border border-white/25 px-3 py-1 text-xs font-semibold transition-colors hover:bg-white/10'
                 >
                   {t('tryAgain')}
