@@ -78,6 +78,7 @@ import {
   type FormatMap,
 } from '@/lib/platformFormat'
 import { detectPlatform, type SupportedPlatform } from '@/lib/validator'
+import { resolveNarration } from '@/lib/resolveNarration'
 import { resolve } from '@/lib/resolve'
 import {
   describeProgress,
@@ -689,6 +690,40 @@ const ImageLightbox = dynamic(
 // matches the real result (thumbnail + title, a toggle, a tile grid, and the
 // two download buttons) so the swap to real content reads as fill-in, not a
 // late appearance.
+/**
+ * The line above the skeleton, saying what the wait is for.
+ *
+ * A pulsing shape says "something is happening" and nothing else, which is not
+ * the question somebody has at eight seconds. The wording lives in
+ * lib/resolveNarration, where the rule that every line has to be *true* is
+ * written down; all this does is keep time.
+ *
+ * One second is the whole resolution needed — the copy changes twice in the
+ * life of a resolve — and the interval dies with the component, so it never
+ * outlives the wait it is describing.
+ */
+function ResolveNarration({
+  platform,
+}: {
+  platform: SupportedPlatform | null
+}) {
+  const [elapsed, setElapsed] = useState(0)
+  useEffect(() => {
+    const startedAt = nowMs()
+    const timer = window.setInterval(() => setElapsed(nowMs() - startedAt), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+  return (
+    <p
+      role='status'
+      aria-live='polite'
+      className='animate-fade-in-up text-center text-xs text-white/45'
+    >
+      {resolveNarration(platform, elapsed)}
+    </p>
+  )
+}
+
 function ResultsSkeleton() {
   return (
     <Surface
@@ -2670,7 +2705,15 @@ export function DownloaderApp() {
           </Surface>
         )}
 
-        {state.loading && !batch && !state.videoMetadata && <ResultsSkeleton />}
+        {state.loading && !batch && !state.videoMetadata && (
+          <>
+            {/* The platform comes from the link, so this is known before the
+                first request and doubles as a receipt that the paste was
+                understood. */}
+            <ResolveNarration platform={detectPlatform(state.url)} />
+            <ResultsSkeleton />
+          </>
+        )}
 
           {state.videoMetadata && (
             // CSS entrance (not framer initial:opacity-0). On mobile the main
