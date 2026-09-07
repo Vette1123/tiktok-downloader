@@ -68,6 +68,14 @@ import {
   removeQuality,
   type QualityMap,
 } from '@/lib/platformQuality'
+import {
+  clearPlatformFormat,
+  effectiveFormat,
+  getStoredFormatMap,
+  rememberPlatformFormat,
+  removeFormat,
+  type FormatMap,
+} from '@/lib/platformFormat'
 import { detectPlatform, type SupportedPlatform } from '@/lib/validator'
 import { resolve } from '@/lib/resolve'
 import {
@@ -773,6 +781,10 @@ export function DownloaderApp() {
   const [platformQualityMap, setPlatformQualityMap] = useState<QualityMap>(() =>
     typeof window === 'undefined' ? {} : getStoredQualityMap(),
   )
+  // The same, for the video/MP3 choice. See lib/platformFormat.
+  const [platformFormatMap, setPlatformFormatMap] = useState<FormatMap>(() =>
+    typeof window === 'undefined' ? {} : getStoredFormatMap(),
+  )
 
   // Thin aliases: the store already persists and notifies, so these exist only
   // to keep the call sites in this file reading the same as before.
@@ -820,11 +832,14 @@ export function DownloaderApp() {
       type: state.downloadType,
       // An explicit re-pick wins; otherwise a platform's remembered choice
       // (set by an earlier re-pick on that platform's result); otherwise the
-      // global pref. See lib/platformQuality.
+      // global pref. Same three-step rule for both knobs — see
+      // lib/platformMemory.
       quality:
         opts?.quality ??
         effectiveQuality(quality, detectPlatform(target) as SupportedPlatform, getStoredQualityMap()),
-      format: opts?.format ?? format,
+      format:
+        opts?.format ??
+        effectiveFormat(format, detectPlatform(target) as SupportedPlatform, getStoredFormatMap()),
       proToken,
     })
 
@@ -893,13 +908,17 @@ export function DownloaderApp() {
           },
         })
         void rememberInHistory(target, data.metadata)
-        // A deliberate HD/SD pick on a result is taste for that platform —
-        // remembered locally so the next link from it resolves the same way.
+        // A deliberate pick on a result is taste for that platform, not for
+        // that post — remembered locally so the next link from it resolves the
+        // same way. Both knobs, because "MP3 from YouTube, video from TikTok"
+        // is as ordinary a habit as "data saver on my phone", and on YouTube it
+        // is no longer even a preference: the MP3 is the whole of what a link
+        // there can give.
+        const pickedOn = detectPlatform(target) as SupportedPlatform
+        rememberPlatformFormat(pickedOn, nextFormat)
+        setPlatformFormatMap(getStoredFormatMap())
         if (nextFormat === 'video') {
-          rememberPlatformQuality(
-            detectPlatform(target) as SupportedPlatform,
-            nextQuality,
-          )
+          rememberPlatformQuality(pickedOn, nextQuality)
           setPlatformQualityMap(getStoredQualityMap())
         }
       } else {
@@ -2174,18 +2193,37 @@ export function DownloaderApp() {
               {(() => {
                 const platform = detectPlatform(state.url || state.originalUrl)
                 if (platform === 'unknown') return null
-                const remembered = platformQualityMap[platform]
-                if (!remembered) return null
+                const rememberedQuality = platformQualityMap[platform]
+                const rememberedFormat = platformFormatMap[platform]
+                if (!rememberedQuality && !rememberedFormat) return null
                 const label = PLATFORM_DISPLAY[platform] ?? platform
+                // Both knobs on one line, in the order the toggles above sit,
+                // and only the ones actually remembered. One reset clears the
+                // pair: two adjacent "reset" links a few characters apart is a
+                // thing to misclick, not a feature.
+                //
+                // "Video" is listed as well as "MP3", even though video is the
+                // shipped default: the memory overrides the *global* toggle, so
+                // for somebody whose global is MP3 a remembered "Video" is the
+                // whole reason this platform behaves differently. Printing only
+                // the non-default would leave that person reading "TikTok: HD"
+                // and wondering where the video came from.
+                const remembered = [
+                  rememberedFormat === 'audio' ? 'MP3' : null,
+                  rememberedFormat === 'video' ? 'Video' : null,
+                  rememberedQuality === 'hd' ? 'HD' : null,
+                  rememberedQuality === 'sd' ? 'Data saver' : null,
+                ].filter(Boolean)
                 return (
                   <span className='text-[11px] text-white/40'>
-                    {label}:{' '}
-                    {remembered === 'hd' ? 'HD' : 'Data saver'} ·{' '}
+                    {label}: {remembered.join(' · ')} ·{' '}
                     <button
                       type='button'
                       onClick={() => {
                         clearPlatformQuality(platform)
+                        clearPlatformFormat(platform)
                         setPlatformQualityMap((m) => removeQuality(m, platform))
+                        setPlatformFormatMap((m) => removeFormat(m, platform))
                       }}
                       className='underline underline-offset-2 transition-colors hover:text-white/70'
                     >

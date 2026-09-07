@@ -80,10 +80,52 @@ export function formatBytes(bytes: number): string {
 }
 
 /**
- * The whole readout: `6.2 / 20.0 MB · 3.1 MB/s`. Rate comes from the transfer
- * window the caller measured, not from between-emission deltas, so a stalled
- * second reads as slow rather than as infinity. Returns '' before there is
- * anything worth saying.
+ * How much longer, in words, or '' when saying would be worse than not.
+ *
+ * The one number a person watching a download actually wants, and the one the
+ * readout never had: bytes and a rate are the inputs to a sum nobody should
+ * have to do while waiting.
+ *
+ * Three cases where it stays quiet, because a wrong estimate is worse than
+ * none:
+ *
+ *   - Before there is a stable sample. The opening seconds are TLS setup and
+ *     the instance's own startup, and an estimate built on them is wildly
+ *     pessimistic — the same reason `RATE_SAMPLE_AFTER_MS` exists in the
+ *     download path.
+ *   - Under five seconds left, where the number changes faster than it can be
+ *     read and "almost done" is the honest reading of a bar that is nearly full.
+ *   - Over an hour, which on a social video means the rate has collapsed, and
+ *     printing "about 4 hours" would be a guess about a transfer that is going
+ *     to fail rather than finish.
+ */
+const ETA_MIN_ELAPSED_MS = 3000
+const ETA_MIN_SECONDS = 5
+const ETA_MAX_SECONDS = 60 * 60
+
+export function describeRemaining(
+  detail: ProgressDetail | null,
+  now: number = Date.now(),
+): string {
+  if (!detail || detail.total <= 0 || detail.received <= 0) return ''
+  const elapsedMs = now - detail.startedAt
+  if (elapsedMs < ETA_MIN_ELAPSED_MS) return ''
+
+  const bytesPerMs = detail.received / elapsedMs
+  if (bytesPerMs <= 0) return ''
+  const seconds = Math.round((detail.total - detail.received) / bytesPerMs / 1000)
+  if (seconds < ETA_MIN_SECONDS || seconds > ETA_MAX_SECONDS) return ''
+
+  if (seconds < 60) return `about ${seconds}s left`
+  const minutes = Math.round(seconds / 60)
+  return `about ${minutes} min left`
+}
+
+/**
+ * The whole readout: `6.2 / 20.0 MB · 3.1 MB/s · about 40s left`. Rate comes
+ * from the transfer window the caller measured, not from between-emission
+ * deltas, so a stalled second reads as slow rather than as infinity. Returns ''
+ * before there is anything worth saying.
  */
 export function describeProgress(
   detail: ProgressDetail | null,
@@ -93,5 +135,10 @@ export function describeProgress(
   const elapsedS = Math.max(0.5, (now - detail.startedAt) / 1000)
   const mbps = detail.received / MB / elapsedS
   const speed = mbps >= 0.1 ? `${mbps.toFixed(1)} MB/s` : `${Math.round((detail.received / 1024) / elapsedS)} KB/s`
-  return `${formatBytes(detail.received)} / ${formatBytes(detail.total)} · ${speed}`
+  const parts = [
+    `${formatBytes(detail.received)} / ${formatBytes(detail.total)}`,
+    speed,
+    describeRemaining(detail, now),
+  ]
+  return parts.filter(Boolean).join(' · ')
 }
