@@ -10,9 +10,11 @@
 // to — that a desktop reader gets, because from a laptop there is no way to
 // know which phone they will install on.
 //
-// Nafis is Android-only (no iOS submit config in its eas.json, no App Store id
-// anywhere in its repo, and nafis-privacy/go 404s), so it has neither and
-// `storesLabel` says so rather than inheriting a claim from its neighbours.
+// Nafis followed on 2026-09-06 and the list is now uniform: all three carry
+// both. Its entry was the reason `appStoreUrl` and `installUrl` are optional
+// rather than required, and they stay optional — the next app to be added
+// starts Android-only, and a required field would have to be filled with
+// something untrue on its first day.
 //
 // The same module exists in the Reely repo. Two deployables with no shared
 // package between them, so this is a port, not an import — fix both or neither.
@@ -67,6 +69,7 @@ export const PLAY_APPS: readonly PlayApp[] = [
     'Nafis',
     'A local-price tracker for gold, currencies and more',
     'com.mohamedgado.nafis',
+    { id: '6807595780', slug: 'nafis' },
   ),
 ]
 
