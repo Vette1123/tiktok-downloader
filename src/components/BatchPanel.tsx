@@ -17,7 +17,7 @@ import {
   rowStatusText,
 } from '@/lib/batchPresentation'
 import { buildDownloadFilename } from '@/lib/filename'
-import { saveBlob } from '@/lib/blobSaver'
+import { saveBlob, saveMedia } from '@/lib/blobSaver'
 import { resolve, type ResolveResult } from '@/lib/resolve'
 import {
   usePendingBatchLinks,
@@ -93,7 +93,7 @@ async function saveVideoResult(
     if (!result.downloadUrl) return
     const response = await fetch(result.downloadUrl)
     if (!response.ok) return
-    saveBlob(await response.blob(), filename)
+    await saveMedia(await response.blob(), filename)
   } catch {
     // Network hiccup or an expired proxy URL — silent, matches the best-effort
     // contract described above.

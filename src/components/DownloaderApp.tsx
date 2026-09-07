@@ -107,7 +107,7 @@ import {
   subscribeHistory,
   type HistoryEntry,
 } from '@/lib/history'
-import { saveBlob } from '@/lib/blobSaver'
+import { saveBlob, saveMedia } from '@/lib/blobSaver'
 import { canShareFile, fileFromBlob, shareFile } from '@/lib/shareFile'
 import { audioTagsFor } from '@/lib/audioTags'
 import { bytesFromDataUrl, tagMp3 } from '@/lib/id3'
@@ -554,8 +554,8 @@ async function downloadDirectWithProgress(
   // What to do with the finished bytes. Defaulted rather than required so the
   // only reason to pass it is the one the component has: it also wants to keep
   // the file around for the share sheet, and to write tags into an MP3 — which
-  // is why this may be asynchronous.
-  deliver: (blob: Blob, filename: string) => void | Promise<void> = saveBlob,
+  // is why this is awaited and its result ignored.
+  deliver: (blob: Blob, filename: string) => unknown = saveMedia,
 ): Promise<DirectDownloadOutcome> {
   let oversize = false
   try {
@@ -1475,11 +1475,14 @@ export function DownloaderApp() {
    * The single delivery point for every media save in this component, so the
    * "send it somewhere" button cannot end up offered for one kind of file and
    * missing for another — which is exactly what happened while the anchor dance
-   * was hand-rolled in three places instead of living in `saveBlob`.
+   * was hand-rolled in three places instead of living in `saveMedia`.
    */
-  const deliver = (blob: Blob, filename: string) => {
-    saveBlob(blob, filename)
-    rememberSaved(fileFromBlob(blob, filename))
+  const deliver = async (blob: Blob, filename: string) => {
+    // The name is corrected against the bytes first, so what is offered to the
+    // share sheet is the file that actually reached the disk — same name, same
+    // type — rather than the one the button guessed before it arrived.
+    const saved = await saveMedia(blob, filename)
+    rememberSaved(fileFromBlob(blob, saved))
   }
 
   /**
@@ -1510,12 +1513,12 @@ export function DownloaderApp() {
    */
   const deliverAudio = async (blob: Blob, filename: string) => {
     if (!tagAudio) {
-      deliver(blob, filename)
+      await deliver(blob, filename)
       return
     }
     const tags = audioTagsFor(state.videoMetadata, state.originalUrl)
     const coverJpeg = await coverArt()
-    deliver(await tagMp3(blob, { ...tags, coverJpeg }), filename)
+    await deliver(await tagMp3(blob, { ...tags, coverJpeg }), filename)
   }
 
   // The post's own title, so the sheet's draft message says what the file is
@@ -1617,7 +1620,7 @@ export function DownloaderApp() {
       const blob = await streamToBlob(response, (p) =>
         dispatch({ type: 'SET_PROGRESS', payload: p }),
       )
-      deliver(blob, nameFile('mp4'))
+      await deliver(blob, nameFile('mp4'))
 
       dispatch({
         type: 'SET_MESSAGE',
@@ -1666,7 +1669,7 @@ export function DownloaderApp() {
       const blob = await streamToBlob(response, (p) =>
         dispatch({ type: 'SET_PROGRESS', payload: p }),
       )
-      deliver(blob, nameFile('mp4'))
+      await deliver(blob, nameFile('mp4'))
 
       dispatch({
         type: 'SET_MESSAGE',
@@ -1911,7 +1914,7 @@ export function DownloaderApp() {
               payload: 90 + Math.round(meta.percent * 0.1),
             }),
         )
-        deliver(blob, nameFile('zip'))
+        await deliver(blob, nameFile('zip'))
 
         dispatch({
           type: 'SET_MESSAGE',
@@ -1955,8 +1958,8 @@ export function DownloaderApp() {
             // Only a one-item selection is offered to the share sheet. A run of
             // saves has no single "the file" to send, and quietly offering the
             // last one would send the wrong picture confidently.
-            const keep = totalImages === 1 ? deliver : saveBlob
-            keep(blob, filename)
+            const keep = totalImages === 1 ? deliver : saveMedia
+            await keep(blob, filename)
 
             await new Promise((resolve) => setTimeout(resolve, 500))
           } catch (error) {
